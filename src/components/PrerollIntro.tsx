@@ -8,6 +8,13 @@ import { motion, AnimatePresence } from "motion/react";
 import { Volume2, VolumeX, SkipForward, Play, Flame, Sparkles } from "lucide-react";
 import { synth } from "../utils/audio";
 
+const CINEMATIC_PICS = [
+  'https://v3b.fal.media/files/b/0a9e9a3f/1GZK1w6ryqWunIEqMd5ia_Od8D2ejG.png',
+  'https://v3b.fal.media/files/b/0a9e9a40/gRaQduUenzWMQrwcBi73c_1N8lXZiL.png',
+  'https://v3b.fal.media/files/b/0a9e9a40/O6k3naEgAN7yGkiAa9zPy_Gs3qRp0a.png',
+  'https://vip.123pan.cn/1825227364/main_visual.png'
+];
+
 interface PrerollIntroProps {
   onComplete: () => void;
 }
@@ -127,17 +134,15 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
             >
               {/* Dynamic Abstract Ink Background */}
               <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: [1, 1.4, 1.8], opacity: [0.1, 0.45, 0] }}
-                  transition={{ duration: 3.5, ease: "easeOut" }}
-                  className="w-96 h-96 rounded-full bg-gradient-to-r from-[#dfb15b]/20 via-[#dfb15b]/5 to-transparent blur-3xl"
+                <div 
+                   className="absolute inset-0 bg-cover bg-center opacity-60 scale-110 transition-transform duration-[4000ms]"
+                   style={{ backgroundImage: `url(${CINEMATIC_PICS[0]})` }}
                 />
                 <motion.div
-                  initial={{ rotate: 0 }}
-                  animate={{ rotate: 120 }}
-                  transition={{ duration: 3.5, ease: "linear" }}
-                  className="absolute w-72 h-72 border border-[#dfb15b]/5 rounded-full"
+                  initial={{ scale: 1.2, opacity: 0 }}
+                  animate={{ scale: 1.8, opacity: [0.1, 0.3, 0] }}
+                  transition={{ duration: 3.5 }}
+                  className="w-full h-full bg-gradient-to-r from-[#dfb15b]/20 via-transparent to-transparent blur-2xl"
                 />
               </div>
 
@@ -172,8 +177,12 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
               transition={{ duration: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
             >
+              <div 
+                  className="absolute inset-0 bg-cover bg-center opacity-60 scale-110"
+                  style={{ backgroundImage: `url(${CINEMATIC_PICS[1]})` }}
+               />
               {/* Misty Oriental Landscape Background */}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#141416] via-[#09090b] to-[#121214] opacity-50" />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#141416]/80 via-transparent to-[#121214]/80 opacity-50" />
               <div className="absolute inset-0 flex items-end justify-center pb-24 overflow-hidden opacity-30">
                 {/* Silhouette Mountains */}
                 <svg className="w-full h-40 text-stone-800" viewBox="0 0 1440 200" fill="currentColor">
@@ -218,8 +227,12 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
               transition={{ duration: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
             >
+              <div 
+                  className="absolute inset-0 bg-cover bg-center opacity-60 scale-110"
+                  style={{ backgroundImage: `url(${CINEMATIC_PICS[2]})` }}
+               />
               {/* Fire Wax Melter Simulated Glow */}
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                 <motion.div
                   animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.35, 0.15] }}
                   transition={{ repeat: Infinity, duration: 3 }}
@@ -258,7 +271,11 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
               transition={{ duration: 1.2 }}
               className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
             >
-              <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+              <div 
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${CINEMATIC_PICS[3]})` }}
+               />
+              <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none bg-black/40">
                 <span className="text-[12rem] font-serif text-[#dfb15b] select-none uppercase tracking-tighter">
                   封
                 </span>
