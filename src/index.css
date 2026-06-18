@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;900&family=Zhi+Mang+Xing&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Noto Serif SC", "Playfair Display", serif;
+  --font-brush: "Zhi Mang Xing", cursive;
+}
+
+/* Custom ink scroll appearance improvements */
+.scroll-smooth::-webkit-scrollbar {
+  width: 3px;
+}
+.scroll-smooth::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.scroll-smooth::-webkit-scrollbar-thumb {
+  background: rgba(223, 177, 91, 0.3);
+  border-radius: 9px;
+}
+
+/* Frosted Glass Custom Theme Helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(249, 115, 22, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(249, 115, 22, 0.15);
+}
+
+.glass-panel-active {
+  background: rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(249, 115, 22, 0.5);
+  box-shadow: 0 0 20px 2px rgba(249, 115, 22, 0.08);
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glass-input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+}
+.glass-input:focus {
+  border-color: rgba(249, 115, 22, 0.6);
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.1);
+}
+

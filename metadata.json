@@ -1,0 +1,6 @@
+{
+  "name": "小小封藏传人",
+  "description": "电影级实景互动剧游H5系统。包括：首屏15s预告片、3D视差长卷、真人NPC分屏点亮逻辑及金色大印落成动效。",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
