@@ -84,7 +84,9 @@ export default function ParallaxScrollH5({
       // Trigger spectacular "金柱冲天" effect if NPC clicked 5 stars
       if (lastTriggeredStamp.stars === 5) {
         setGoldPillarActive(true);
-        setTimeout(() => setGoldPillarActive(false), 2500);
+        setTimeout(() => {
+          setGoldPillarActive(false);
+        }, 1500);
       }
 
       // Explode pristine gold spark particles
