@@ -96,13 +96,6 @@ export default function App() {
   const [photos, setPhotos] = useState<LivePhoto[]>([]);
   const [activeConsoleTab, setActiveConsoleTab] = useState<"npc" | "photo" | "logs">("npc");
   const [selectedCompletedLevel, setSelectedCompletedLevel] = useState<GameLevel | null>(null);
-
-  // 🏛️ 智能路由分流逻辑：根据 URL 参数自动切换终端身份
-  // 生产环境通过 ?role=customer 或 ?role=npc 访问对应端
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const activeRole = searchParams?.get('role'); // customer | npc | photog
-
-  // ... [保持原有逻辑]
   
   // High-performance real-time virtual trigger event queue
   const [lastTriggeredStamp, setLastTriggeredStamp] = useState<{
@@ -202,34 +195,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#020205] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-orange-500/30 select-none overflow-x-hidden relative">
       
-      {/* 🔮 终端鉴权渲染引擎 */}
-      {activeRole === 'customer' ? (
-        <div className="w-screen h-screen flex items-center justify-center p-0 lg:p-10">
-           <div className="relative w-full max-w-[412px] h-[820px] aspect-[9/19]">
-              {!hasCompletedIntro && (
-                <div className="absolute inset-0 z-50 rounded-[32px] overflow-hidden">
-                  <PrerollIntro onComplete={() => setHasCompletedIntro(true)} />
-                </div>
-              )}
-              <ParallaxScrollH5 
-                levels={levels} 
-                passport={passport} 
-                photos={photos}
-                onUpdatePassport={handleUpdatePassport}
-                onClearScore={handleClearScore}
-                lastTriggeredStamp={lastTriggeredStamp}
-              />
-           </div>
-        </div>
-      ) : activeRole === 'npc' ? (
-        <div className="w-screen h-screen p-4 bg-h5-ink">
-          <NpcDashboard levels={levels} passport={passport} onUpdateScore={handleNpcScoreLevel} />
-        </div>
-      ) : (
-        <>
-          {/* 原有 CEO 模拟器三合一界面逻辑 - 保留用于全局预览 */}
-          {/* Absolute Decorative Ambient Background Gradients for physical feeling (Frosted Glass Theme) */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-[#0a0a1a] via-[#020205] to-[#1a1005] opacity-90 pointer-events-none" />
+      {/* Absolute Decorative Ambient Background Gradients for physical feeling (Frosted Glass Theme) */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-[#0a0a1a] via-[#020205] to-[#1a1005] opacity-90 pointer-events-none" />
       <div className="absolute top-10 left-10 w-[500px] h-[500px] bg-orange-500/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[130px] pointer-events-none" />
 
@@ -437,10 +404,6 @@ export default function App() {
           Confidential for Internal Audits Only • Copyright © 2026 Hermes Club. All rights reserved.
         </p>
       </footer>
-
-      {/* ⚠️ 闭合多端判断 */}
-      </>
-      )}
 
       {/* Completed Level Detail Overlay Modal */}
       {selectedCompletedLevel && (
