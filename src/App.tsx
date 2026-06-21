@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GameLevel, UserPassport, LivePhoto, LevelStatus } from "./types";
 import PrerollIntro from "./components/PrerollIntro";
 import ParallaxScrollH5 from "./components/ParallaxScrollH5";
@@ -97,13 +97,16 @@ export default function App() {
   const [activeConsoleTab, setActiveConsoleTab] = useState<"npc" | "photo" | "logs">("npc");
   const [selectedCompletedLevel, setSelectedCompletedLevel] = useState<GameLevel | null>(null);
 
-  // 🏛️ 智能路由分流逻辑：根据 URL 参数自动切换终端身份
-  // 生产环境通过 ?role=customer 或 ?role=npc 访问对应端
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const activeRole = searchParams?.get('role'); // customer | npc | photog
+  // 🏛️ 智能路由分流逻辑：根据 URL 参数自动切换终端身份 (兼容 SSG)
+  const [activeRole, setActiveRole] = useState<string | null>(null);
 
-  // ... [保持原有逻辑]
-  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setActiveRole(params.get('role'));
+  }, []);
+
+  // ... [后续逻辑保持不变]
+
   // High-performance real-time virtual trigger event queue
   const [lastTriggeredStamp, setLastTriggeredStamp] = useState<{
     levelId: string;
