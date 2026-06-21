@@ -28,8 +28,16 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
   useEffect(() => {
     if (!isStarted) return;
     
-      // 🎶 注入电影级BGM：深沉的大提琴声，增强史诗感
-      const CINEMATIC_PROLOGUE_BGM = "https://cdn.pixabay.com/audio/2023/04/26/audio_f55f269a84.mp3"; 
+    // 🔈 物理注入 BGM 播放器：采用更高的 DOM 优先级通过 Audio 对象播放
+    const audio = new Audio("https://cdn.pixabay.com/audio/2023/04/26/audio_f55f269a84.mp3");
+    audio.loop = true;
+    audio.volume = 0.6;
+    
+    if (!muted) {
+      audio.play().catch(err => {
+         console.warn("BGM Play failed, waiting for user interaction:", err);
+      });
+    }
 
       const timers = [
         setTimeout(() => { setCurrentScene(1); if(!muted) synth.playWaterDrop(); }, 3500),
@@ -39,6 +47,7 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
 
     return () => {
       timers.forEach(clearTimeout);
+      audio.pause(); 
     };
   }, [isStarted, muted]);
 
