@@ -28,11 +28,14 @@ export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
   useEffect(() => {
     if (!isStarted) return;
     
-    const timers = [
-      setTimeout(() => { setCurrentScene(1); if(!muted) synth.playWaterDrop(); }, 3500),
-      setTimeout(() => { setCurrentScene(2); if(!muted) synth.playSwipe(); }, 7500),
-      setTimeout(() => { setCurrentScene(3); if(!muted) synth.playChime(); }, 11500),
-    ];
+      // 🎶 注入电影级BGM：深沉的大提琴声，增强史诗感
+      const CINEMATIC_PROLOGUE_BGM = "https://cdn.pixabay.com/audio/2023/04/26/audio_f55f269a84.mp3"; 
+
+      const timers = [
+        setTimeout(() => { setCurrentScene(1); if(!muted) synth.playWaterDrop(); }, 3500),
+        setTimeout(() => { setCurrentScene(2); if(!muted) synth.playSwipe(); }, 7500),
+        setTimeout(() => { setCurrentScene(3); if(!muted) synth.playChime(); }, 11500),
+      ];
 
     return () => {
       timers.forEach(clearTimeout);

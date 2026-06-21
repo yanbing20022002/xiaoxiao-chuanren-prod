@@ -152,12 +152,16 @@ export default function App() {
         if (isCompleted) {
           status = LevelStatus.COMPLETED;
         } else {
-          // If previous is completed, this one is active (or if it's the very first level)
-          const prevIdNum = parseInt(lvl.id) - 1;
-          const prevIdStr = prevIdNum > 0 ? `0${prevIdNum}` : null;
-          
-          if (!prevIdStr || history[prevIdStr] !== undefined) {
-            status = LevelStatus.ACTIVE;
+          // 🛑 核心修改：真正的顺序解锁逻辑
+          // 只有前一关 ID 存在于 history (即 NPC 已点亮) 时，当前关卡才设为 ACTIVE
+          const idNum = parseInt(lvl.id);
+          if (idNum === 1) {
+            status = LevelStatus.ACTIVE; // 第一关默认开启
+          } else {
+            const prevIdStr = (idNum - 1).toString().padStart(2, '0');
+            if (history[prevIdStr] !== undefined) {
+              status = LevelStatus.ACTIVE;
+            }
           }
         }
         
