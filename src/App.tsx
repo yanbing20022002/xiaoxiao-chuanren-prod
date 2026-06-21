@@ -101,11 +101,15 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setActiveRole(params.get('role'));
+    // 强制从原生 URL 抓取参数
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    const role = params.get('role');
+    console.log("Current active role detected:", role);
+    setActiveRole(role);
   }, []);
 
-  // ... [后续逻辑保持不变]
+  // ... [保持原有逻辑]
 
   // High-performance real-time virtual trigger event queue
   const [lastTriggeredStamp, setLastTriggeredStamp] = useState<{
