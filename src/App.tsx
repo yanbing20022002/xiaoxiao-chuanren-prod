@@ -92,6 +92,10 @@ const SCENE_ASSETS = {
 const INTRO_BGM_URL = "/assets/audio/intro-bgm.mp3";
 
 type RoleMode = "customer" | "npc" | "default";
+type TriggerStamp = { levelId: string; stars: number; timestamp: number } | null;
+
+const SHARED_STATE_STORAGE_KEY = "xiaoxiao-chuanren-shared-state-v1";
+const TRIGGER_STORAGE_KEY = "xiaoxiao-chuanren-trigger-stamp-v1";
 
 function getRoleFromSearch(search: string): RoleMode {
   const role = new URLSearchParams(search).get("role");
@@ -99,17 +103,27 @@ function getRoleFromSearch(search: string): RoleMode {
   return "default";
 }
 
+function readSharedState() {
+  try {
+    const raw = window.localStorage.getItem(SHARED_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as { passport?: UserPassport; photos?: LivePhoto[] };
+  } catch {
+    return null;
+  }
+}
+
+function writeTriggerStamp(trigger: TriggerStamp) {
+  if (!trigger) return;
+  window.localStorage.setItem(TRIGGER_STORAGE_KEY, JSON.stringify(trigger));
+}
+
 export default function App() {
   const [role, setRole] = useState<RoleMode>(() => getRoleFromSearch(window.location.search));
   const [hasCompletedIntro, setHasCompletedIntro] = useState(false);
-  const [levels, setLevels] = useState<GameLevel[]>(INITIAL_LEVELS);
-  const [passport, setPassport] = useState<UserPassport>(INITIAL_PASSPORT);
-  const [photos, setPhotos] = useState<LivePhoto[]>([]);
-  const [lastTriggeredStamp, setLastTriggeredStamp] = useState<{
-    levelId: string;
-    stars: number;
-    timestamp: number;
-  } | null>(null);
+  const [passport, setPassport] = useState<UserPassport>(() => readSharedState()?.passport ?? INITIAL_PASSPORT);
+  const [photos, setPhotos] = useState<LivePhoto[]>(() => readSharedState()?.photos ?? []);
+  const [lastTriggeredStamp, setLastTriggeredStamp] = useState<TriggerStamp>(null);
 
   useEffect(() => {
     const handlePopState = () => setRole(getRoleFromSearch(window.location.search));
@@ -117,23 +131,63 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      SHARED_STATE_STORAGE_KEY,
+      JSON.stringify({
+        passport,
+        photos
+      })
+    );
+  }, [passport, photos]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SHARED_STATE_STORAGE_KEY && event.newValue) {
+        try {
+          const nextState = JSON.parse(event.newValue) as { passport?: UserPassport; photos?: LivePhoto[] };
+          if (nextState.passport) {
+            setPassport(nextState.passport);
+          }
+          if (nextState.photos) {
+            setPhotos(nextState.photos);
+          }
+        } catch {
+          // Ignore malformed storage payloads.
+        }
+      }
+
+      if (event.key === TRIGGER_STORAGE_KEY && event.newValue) {
+        try {
+          const nextTrigger = JSON.parse(event.newValue) as TriggerStamp;
+          if (nextTrigger) {
+            setLastTriggeredStamp(nextTrigger);
+          }
+        } catch {
+          // Ignore malformed trigger payloads.
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
   const sceneAssets = useMemo(
     () => [SCENE_ASSETS.ink, SCENE_ASSETS.run, SCENE_ASSETS.union, SCENE_ASSETS.finale],
     []
   );
 
-  const updateLevelStatuses = (
-    history: { [levelId: string]: number },
-    npcLitLevels: string[],
-    activated: boolean
-  ) => {
-    setLevels((current) =>
-      current.map((lvl, index) => {
-        const isNpcLit = npcLitLevels.includes(lvl.id);
-        const previousLevelId = index > 0 ? current[index - 1].id : null;
-        const isUnlocked = activated && (index === 0 || (previousLevelId !== null && npcLitLevels.includes(previousLevelId)));
-        let status = LevelStatus.LOCKED;
+  const levels = useMemo<GameLevel[]>(
+    () =>
+      INITIAL_LEVELS.map((lvl, index) => {
+        const isNpcLit = passport.npcLitLevels.includes(lvl.id);
+        const previousLevelId = index > 0 ? INITIAL_LEVELS[index - 1].id : null;
+        const isUnlocked =
+          passport.activated &&
+          (index === 0 || (previousLevelId !== null && passport.npcLitLevels.includes(previousLevelId)));
 
+        let status = LevelStatus.LOCKED;
         if (isNpcLit) {
           status = LevelStatus.COMPLETED;
         } else if (isUnlocked) {
@@ -142,38 +196,34 @@ export default function App() {
 
         return {
           ...lvl,
-          stars: history[lvl.id] ?? 0,
+          stars: passport.scoreHistory[lvl.id] ?? 0,
           status
         };
-      })
-    );
-  };
+      }),
+    [passport]
+  );
 
   const handleUpdatePassport = (updatedFields: Partial<UserPassport>) => {
-    const nextPassport = {
-      ...passport,
+    setPassport((prev) => ({
+      ...prev,
       ...updatedFields,
-      scoreHistory: updatedFields.scoreHistory ?? passport.scoreHistory,
-      npcLitLevels: updatedFields.npcLitLevels ?? passport.npcLitLevels
-    };
-    setPassport(nextPassport);
-    updateLevelStatuses(nextPassport.scoreHistory, nextPassport.npcLitLevels, nextPassport.activated);
+      scoreHistory: updatedFields.scoreHistory ?? prev.scoreHistory,
+      npcLitLevels: updatedFields.npcLitLevels ?? prev.npcLitLevels
+    }));
   };
 
   const handleNpcScoreLevel = (levelId: string, stars: number) => {
-    const updatedHistory = { ...passport.scoreHistory, [levelId]: stars };
-    const updatedNpcLitLevels = passport.npcLitLevels.includes(levelId)
-      ? passport.npcLitLevels
-      : [...passport.npcLitLevels, levelId].sort((a, b) => Number(a) - Number(b));
-
     window.setTimeout(() => {
+      const trigger = { levelId, stars, timestamp: Date.now() };
       setPassport((prev) => ({
         ...prev,
-        scoreHistory: updatedHistory,
-        npcLitLevels: updatedNpcLitLevels
+        scoreHistory: { ...prev.scoreHistory, [levelId]: stars },
+        npcLitLevels: prev.npcLitLevels.includes(levelId)
+          ? prev.npcLitLevels
+          : [...prev.npcLitLevels, levelId].sort((a, b) => Number(a) - Number(b))
       }));
-      updateLevelStatuses(updatedHistory, updatedNpcLitLevels, passport.activated);
-      setLastTriggeredStamp({ levelId, stars, timestamp: Date.now() });
+      setLastTriggeredStamp(trigger);
+      writeTriggerStamp(trigger);
     }, 150);
   };
 
@@ -183,7 +233,6 @@ export default function App() {
 
   const handleClearScore = () => {
     setPassport(INITIAL_PASSPORT);
-    setLevels(INITIAL_LEVELS);
     setPhotos([]);
     setLastTriggeredStamp(null);
   };
