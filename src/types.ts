@@ -31,6 +31,7 @@ export interface UserPassport {
   avatarStyle: string; // e.g. "汉服青衣", "汉服玄衣", "汉服金羽"
   activated: boolean;
   scoreHistory: { [levelId: string]: number };
+  npcLitLevels: string[];
 }
 
 export interface LivePhoto {

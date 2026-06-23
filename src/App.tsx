@@ -3,20 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
-import { GameLevel, UserPassport, LivePhoto, LevelStatus } from "./types";
-import PrerollIntro from "./components/PrerollIntro";
-import ParallaxScrollH5 from "./components/ParallaxScrollH5";
-import NpcDashboard from "./components/NpcDashboard";
-import PhotographerDashboard from "./components/PhotographerDashboard";
-import LevelDetailModal from "./components/LevelDetailModal";
-import { 
-  Sparkles, ShieldCheck, Cpu, Terminal, Zap, Info, 
-  RefreshCcw, Volume2, HelpCircle, Flame, Eye
-} from "lucide-react";
-import { synth } from "./utils/audio";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { GameLevel, LivePhoto, LevelStatus, UserPassport } from "./types";
 
-// Initializing the 5 offline physical tasks specified in the CEO bottom-line (底案)
+const CustomerPage = lazy(() => import("./pages/Customer"));
+const NpcPage = lazy(() => import("./pages/Npc"));
+
 const INITIAL_LEVELS: GameLevel[] = [
   {
     id: "01",
@@ -86,102 +78,107 @@ const INITIAL_PASSPORT: UserPassport = {
   customMotto: "",
   avatarStyle: "汉服青衣",
   activated: false,
-  scoreHistory: {}
+  scoreHistory: {},
+  npcLitLevels: []
 };
 
+const SCENE_ASSETS = {
+  ink: "/assets/intro/ink.png",
+  run: "/assets/intro/run.png",
+  union: "/assets/intro/union.png",
+  finale: "/assets/intro/finale.png"
+} as const;
+
+const INTRO_BGM_URL = "/assets/audio/intro-bgm.mp3";
+
+type RoleMode = "customer" | "npc" | "default";
+
+function getRoleFromSearch(search: string): RoleMode {
+  const role = new URLSearchParams(search).get("role");
+  if (role === "customer" || role === "npc") return role;
+  return "default";
+}
+
 export default function App() {
-  const [hasCompletedIntro, setHasCompletedIntro] = useState<boolean>(false);
+  const [role, setRole] = useState<RoleMode>(() => getRoleFromSearch(window.location.search));
+  const [hasCompletedIntro, setHasCompletedIntro] = useState(false);
   const [levels, setLevels] = useState<GameLevel[]>(INITIAL_LEVELS);
   const [passport, setPassport] = useState<UserPassport>(INITIAL_PASSPORT);
   const [photos, setPhotos] = useState<LivePhoto[]>([]);
-  const [activeConsoleTab, setActiveConsoleTab] = useState<"npc" | "photo" | "logs">("npc");
-  const [selectedCompletedLevel, setSelectedCompletedLevel] = useState<GameLevel | null>(null);
-  
-  // High-performance real-time virtual trigger event queue
   const [lastTriggeredStamp, setLastTriggeredStamp] = useState<{
     levelId: string;
     stars: number;
     timestamp: number;
   } | null>(null);
 
-  const [socketLogs, setSocketLogs] = useState<Array<{ time: string; msg: string; type: "info" | "success" | "warning" }>>([
-    { time: new Date().toLocaleTimeString(), msg: "智能信道初始化成功。监听WebSocket端口：3000", type: "info" },
-    { time: new Date().toLocaleTimeString(), msg: "等待孩子端护照号唤醒...", type: "warning" }
-  ]);
+  useEffect(() => {
+    const handlePopState = () => setRole(getRoleFromSearch(window.location.search));
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
-  const addLog = (msg: string, type: "info" | "success" | "warning" = "info") => {
-    setSocketLogs((prev) => [
-      { time: new Date().toLocaleTimeString(), msg, type },
-      ...prev.slice(0, 18) // Cap logs
-    ]);
-  };
+  const sceneAssets = useMemo(
+    () => [SCENE_ASSETS.ink, SCENE_ASSETS.run, SCENE_ASSETS.union, SCENE_ASSETS.finale],
+    []
+  );
 
-  // Callback: User edits passport details (awakening)
-  const handleUpdatePassport = (updatedFields: Partial<UserPassport>) => {
-    const nextPassport = { ...passport, ...updatedFields };
-    setPassport(nextPassport);
-
-    if (updatedFields.activated) {
-      addLog(`[护照登录] 传人注册成功: ${nextPassport.familyName}氏世家子弟【${nextPassport.childName}】激活 ${nextPassport.avatarStyle}`, "success");
-      // Advance first level status
-      updateLevelStatuses(nextPassport.scoreHistory);
-    }
-  };
-
-  // Helper: Computes who is locked vs completed
-  const updateLevelStatuses = (history: { [levelId: string]: number }) => {
+  const updateLevelStatuses = (
+    history: { [levelId: string]: number },
+    npcLitLevels: string[],
+    activated: boolean
+  ) => {
     setLevels((current) =>
-      current.map((lvl) => {
-        const isCompleted = history[lvl.id] !== undefined;
+      current.map((lvl, index) => {
+        const isNpcLit = npcLitLevels.includes(lvl.id);
+        const previousLevelId = index > 0 ? current[index - 1].id : null;
+        const isUnlocked = activated && (index === 0 || (previousLevelId !== null && npcLitLevels.includes(previousLevelId)));
         let status = LevelStatus.LOCKED;
-        
-        if (isCompleted) {
+
+        if (isNpcLit) {
           status = LevelStatus.COMPLETED;
-        } else {
-          // If previous is completed, this one is active (or if it's the very first level)
-          const prevIdNum = parseInt(lvl.id) - 1;
-          const prevIdStr = prevIdNum > 0 ? `0${prevIdNum}` : null;
-          
-          if (!prevIdStr || history[prevIdStr] !== undefined) {
-            status = LevelStatus.ACTIVE;
-          }
+        } else if (isUnlocked) {
+          status = LevelStatus.ACTIVE;
         }
-        
-        return { ...lvl, status };
+
+        return {
+          ...lvl,
+          stars: history[lvl.id] ?? 0,
+          status
+        };
       })
     );
   };
 
-  // Callback: Live real-time NPC scoring trigger
-  const handleNpcScoreLevel = (levelId: string, stars: number) => {
-    const targetLevel = levels.find((l) => l.id === levelId);
-    if (!targetLevel) return;
+  const handleUpdatePassport = (updatedFields: Partial<UserPassport>) => {
+    const nextPassport = {
+      ...passport,
+      ...updatedFields,
+      scoreHistory: updatedFields.scoreHistory ?? passport.scoreHistory,
+      npcLitLevels: updatedFields.npcLitLevels ?? passport.npcLitLevels
+    };
+    setPassport(nextPassport);
+    updateLevelStatuses(nextPassport.scoreHistory, nextPassport.npcLitLevels, nextPassport.activated);
+  };
 
-    addLog(`[真人NPC交互] 正在提交授勋信道: 关卡 ${levelId} "${targetLevel.title}" -> ${stars} 星等`, "info");
-    
-    // 1. Instantly trigger state change 
+  const handleNpcScoreLevel = (levelId: string, stars: number) => {
     const updatedHistory = { ...passport.scoreHistory, [levelId]: stars };
-    
-    // Simulate instantaneous WebSocket transmission loop in < 150ms
-    setTimeout(() => {
+    const updatedNpcLitLevels = passport.npcLitLevels.includes(levelId)
+      ? passport.npcLitLevels
+      : [...passport.npcLitLevels, levelId].sort((a, b) => Number(a) - Number(b));
+
+    window.setTimeout(() => {
       setPassport((prev) => ({
         ...prev,
-        scoreHistory: updatedHistory
+        scoreHistory: updatedHistory,
+        npcLitLevels: updatedNpcLitLevels
       }));
-      
-      updateLevelStatuses(updatedHistory);
-      
-      // Update WebSocket virtual channel metrics
+      updateLevelStatuses(updatedHistory, updatedNpcLitLevels, passport.activated);
       setLastTriggeredStamp({ levelId, stars, timestamp: Date.now() });
-
-      addLog(`[WebSocket推送] 星级评级打包传送成功！孩子端已渲染金色大印击落特效 (延时: 45ms)`, "success");
     }, 150);
   };
 
-  // Callback: Dynamic photo upload
   const handlePhotoUploaded = (photo: LivePhoto) => {
     setPhotos((prev) => [photo, ...prev]);
-    addLog(`[跟拍相片回传] 相机 (A7M4-5G) 捕获一帧 ${photo.caption}。坐标: ${photo.location}。照片长卷已更新！`, "success");
   };
 
   const handleClearScore = () => {
@@ -189,235 +186,87 @@ export default function App() {
     setLevels(INITIAL_LEVELS);
     setPhotos([]);
     setLastTriggeredStamp(null);
-    addLog("[重置系统] 所有传人历史数据、照片长卷及授勋进度清除成功。", "warning");
   };
 
+  const sharedProps = {
+    levels,
+    passport,
+    photos,
+    lastTriggeredStamp,
+    sceneAssets,
+    hasCompletedIntro,
+    bgmSrc: INTRO_BGM_URL,
+    onUpdatePassport: handleUpdatePassport,
+    onClearScore: handleClearScore,
+    onPhotoUploaded: handlePhotoUploaded,
+    onUpdateScore: handleNpcScoreLevel,
+    onIntroComplete: () => setHasCompletedIntro(true)
+  };
+
+  const loadingShell = (
+    <div className="min-h-screen bg-[#050609] flex items-center justify-center text-stone-400 font-serif tracking-[0.3em] uppercase">
+      Loading Ritual...
+    </div>
+  );
+
+  if (role === "customer") {
+    return (
+      <Suspense fallback={loadingShell}>
+        <CustomerPage {...sharedProps} />
+      </Suspense>
+    );
+  }
+
+  if (role === "npc") {
+    return (
+      <Suspense fallback={loadingShell}>
+        <NpcPage {...sharedProps} />
+      </Suspense>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#020205] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-orange-500/30 select-none overflow-x-hidden relative">
-      
-      {/* Absolute Decorative Ambient Background Gradients for physical feeling (Frosted Glass Theme) */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-[#0a0a1a] via-[#020205] to-[#1a1005] opacity-90 pointer-events-none" />
-      <div className="absolute top-10 left-10 w-[500px] h-[500px] bg-orange-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[130px] pointer-events-none" />
-
-      {/* Main Top Brand Banner Bar (Frosted Glass style) */}
-      <header className="relative z-20 flex flex-col md:flex-row items-center justify-between gap-4 px-8 py-5 border-b border-white/5 bg-black/30 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-black shadow-lg shadow-orange-500/20">
-            <Flame className="w-5 h-5 fill-black animate-pulse" />
-          </span>
-          <div>
-            <h1 className="text-lg font-serif font-semibold tracking-[0.25em] text-white">「小小封藏传人」实景剧游系统</h1>
-            <p className="text-[10px] text-orange-400 font-mono tracking-widest uppercase font-light">Director's Cinematic Sandbox Console</p>
-          </div>
-        </div>
-
-        {/* Global audit credentials */}
-        <div className="flex items-center gap-4 text-xs font-serif bg-white/5 px-4 py-2 rounded-full border border-white/10 backdrop-blur-sm">
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <ShieldCheck className="w-4 h-4 text-orange-500" />
-            <span>CEO 体验版：</span>
-            <span className="text-emerald-400 font-mono text-[10px]">STABLE_BUILD_V4.2.0</span>
-          </div>
-        </div>
-      </header>
-
-      {/* Workspace Body Grid */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch z-10 overflow-hidden">
-        
-        {/* COMPONENT 1: THE ACTIVE PHONE SIMULATOR H5 VIEW (Cols 5) */}
-        <div className="lg:col-span-5 flex flex-col justify-center items-center relative">
-          
-          {/* Mobile phone bezel shadow styling */}
-          <div className="relative w-full max-w-[412px]">
-            
-            {/* Outer golden rim shadow and speakers */}
-            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-32 h-4.5 bg-stone-900 rounded-b-2xl z-40 flex items-center justify-around px-4 border border-stone-800">
-              <span className="w-12 h-1 bg-black rounded-full" />
-              <span className="w-1.5 h-1.5 bg-slate-900 rounded-full" />
-            </div>
-
-            {/* Cinematic Pre-roll Movie Intro Cover Overlay */}
-            {!hasCompletedIntro ? (
-              <div className="absolute inset-0 z-50 rounded-[32px] overflow-hidden">
-                <PrerollIntro onComplete={() => {
-                  setHasCompletedIntro(true); 
-                  addLog("电影级15s预告片播映结束。孩子端激活，加载「时间长卷」", "success");
-                }} />
-              </div>
-            ) : null}
-
-            {/* Inner responsive H5 client core viewport */}
-            <ParallaxScrollH5 
-              levels={levels}
-              passport={passport}
-              photos={photos}
-              onUpdatePassport={handleUpdatePassport}
-              onClearScore={handleClearScore}
-              lastTriggeredStamp={lastTriggeredStamp}
-              onCompletedLevelClick={(lvl) => {
-                setSelectedCompletedLevel(lvl);
-                synth.playChime();
-              }}
-            />
-
-          </div>
-
-          {/* Quick guide under phone */}
-          <div className="text-center mt-3 max-w-[340px]">
-            <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
-              * 提示：上方模拟了在手机端（或护照手环）呈现的界面。
-              {!hasCompletedIntro 
-                ? "请先点击【踏浪入卷】观看15s金墨晕染的视听过场。" 
-                : "现在您可以在右方模拟NPC刷卡点亮与摄影老师拍照了！"
-              }
-            </p>
-          </div>
-
-        </div>
-
-        {/* COMPONENT 2: THE COORDINATOR INTERACTION CONTROL CONSOLE (Cols 7) */}
-        <div className="lg:col-span-7 flex flex-col gap-5 justify-between">
-          
-          {/* Console top tabs using Frosted Glass */}
-          <div className="glass-pill p-1.5 rounded-2xl flex gap-2 shrink-0">
-            <button
-              onClick={() => { setActiveConsoleTab("npc"); synth.playSwipe(); }}
-              className={`flex-1 py-3 rounded-xl text-xs tracking-wider transition-all font-serif flex items-center justify-center gap-2 outline-none ${
-                activeConsoleTab === "npc"
-                  ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold font-serif shadow-lg shadow-orange-500/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              <span>真人 NPC 授勋控制舱</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveConsoleTab("photo"); synth.playSwipe(); }}
-              className={`flex-1 py-3 rounded-xl text-xs tracking-wider transition-all font-serif flex items-center justify-center gap-2 outline-none ${
-                activeConsoleTab === "photo"
-                  ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold font-serif shadow-lg shadow-orange-500/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              <span>摄影师跟拍传输端</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveConsoleTab("logs"); synth.playSwipe(); }}
-              className={`flex-1 py-3 rounded-xl text-xs tracking-wider transition-all font-serif flex items-center justify-center gap-2 outline-none ${
-                activeConsoleTab === "logs"
-                  ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold font-serif shadow-lg shadow-orange-500/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Terminal className="w-4 h-4" />
-              <span>智能云传输网关监控</span>
-            </button>
-          </div>
-
-          {/* Active controller body */}
-          <div className="flex-1 min-h-[460px]">
-            {activeConsoleTab === "npc" && (
-              <NpcDashboard 
-                levels={levels}
-                passport={passport}
-                onUpdateScore={handleNpcScoreLevel}
-              />
-            )}
-
-            {activeConsoleTab === "photo" && (
-              <PhotographerDashboard 
-                onPhotoUploaded={handlePhotoUploaded}
-              />
-            )}
-
-            {activeConsoleTab === "logs" && (
-              <div className="glass-panel rounded-2xl h-full p-6 font-mono text-xs flex flex-col shadow-2xl relative select-none">
-                
-                {/* Header dashboard info */}
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-ping" />
-                    <span className="text-slate-300 font-bold uppercase tracking-wider text-[11px]">WebSocket Raw Signal Terminal</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSocketLogs([
-                        { time: new Date().toLocaleTimeString(), msg: "WebSocket传输日志重置成功。", type: "info" }
-                      ]);
-                      synth.playSwipe();
-                    }}
-                    className="text-slate-500 hover:text-orange-400 flex items-center gap-1 text-[10px] transition-colors"
-                  >
-                    <RefreshCcw className="w-3 h-3" />
-                    <span>清空信道</span>
-                  </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto space-y-2 mt-4 pr-2">
-                  {socketLogs.map((log, i) => (
-                    <div 
-                      key={i} 
-                      className={`ps-3.5 border-l-2 py-1 flex items-start justify-between text-[11px] font-mono gap-4 leading-relaxed ${
-                        log.type === "success" 
-                          ? "border-emerald-500 text-emerald-400/90" 
-                          : log.type === "warning"
-                          ? "border-orange-500 text-orange-400/80"
-                          : "border-blue-500 text-slate-400/90"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-slate-600 mr-2">[{log.time}]</span>
-                        <span>{log.msg}</span>
-                      </div>
-                      
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 bg-white/5 border border-white/5 rounded shrink-0 text-slate-500">
-                        {log.type}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Footnote details */}
-                <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10 flex gap-3 items-start text-[10px] text-slate-400 font-serif leading-relaxed">
-                  <Info className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
-                  <p>
-                    这里展示的是仿真 WebSocket 信道传输信号。在真实 2天1夜 线下实景区中，当跟配相机拍下照片或评判官大印触下瞬间，系统利用 WebSocket 向在场的孩子手环屏幕推送最新状态。推送延时常年控制在 150 毫秒至 1.5 秒内，最大化保证实景沉浸感。
+    <div className="min-h-screen bg-[#050609] text-white overflow-hidden relative">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(240,196,116,0.18),transparent_35%),linear-gradient(160deg,#050609_0%,#0c1018_45%,#040404_100%)]" />
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-5xl rounded-[32px] border border-white/10 bg-white/6 backdrop-blur-2xl shadow-[0_24px_120px_rgba(0,0,0,0.45)] overflow-hidden">
+          <div className="grid gap-px bg-white/8 md:grid-cols-2">
+            <a href="?role=customer" className="group relative min-h-[520px] overflow-hidden bg-[#090b10] p-8">
+              <img src={SCENE_ASSETS.finale} alt="customer terminal" className="absolute inset-0 h-full w-full object-cover opacity-45 transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/45 to-black/80" />
+              <div className="relative flex h-full flex-col justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.35em] text-amber-300/80">Customer Terminal</p>
+                  <h1 className="mt-4 text-3xl font-serif tracking-[0.18em] text-white">沉浸式传人长卷</h1>
+                  <p className="mt-4 max-w-sm text-sm leading-7 text-stone-300">
+                    仅加载孩子端 H5、开场电影与封藏长卷，不挂载 NPC 按钮，不展示任何后台控制结构。
                   </p>
                 </div>
-
+                <div className="inline-flex w-fit items-center rounded-full border border-amber-300/30 bg-black/35 px-5 py-3 text-xs uppercase tracking-[0.28em] text-amber-100">
+                  进入 customer 端
+                </div>
               </div>
-            )}
+            </a>
+            <a href="?role=npc" className="group relative min-h-[520px] overflow-hidden bg-[#090b10] p-8">
+              <img src={SCENE_ASSETS.union} alt="npc terminal" className="absolute inset-0 h-full w-full object-cover opacity-35 transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/50 to-black/85" />
+              <div className="relative flex h-full flex-col justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.35em] text-red-300/80">Npc Console</p>
+                  <h2 className="mt-4 text-3xl font-serif tracking-[0.18em] text-white">真人评分控制台</h2>
+                  <p className="mt-4 max-w-sm text-sm leading-7 text-stone-300">
+                    仅加载 NPC 核验与点亮界面，专注线下评分，不再携带客户长卷与沉浸式前台结构。
+                  </p>
+                </div>
+                <div className="inline-flex w-fit items-center rounded-full border border-red-300/30 bg-black/35 px-5 py-3 text-xs uppercase tracking-[0.28em] text-red-100">
+                  进入 npc 端
+                </div>
+              </div>
+            </a>
           </div>
-
         </div>
-
-      </main>
-
-      {/* Corporate design block footer */}
-      <footer className="bg-black/40 border-t border-white/5 px-6 py-5 text-center text-[11px] text-slate-500 font-serif shrink-0">
-        <p>「小小封藏传人」实景剧游数智H5配套系统 • 电影级封藏手泽契约落成</p>
-        <p className="mt-1.5 font-mono text-[9px] text-slate-600 uppercase tracking-widest">
-          Confidential for Internal Audits Only • Copyright © 2026 Hermes Club. All rights reserved.
-        </p>
-      </footer>
-
-      {/* Completed Level Detail Overlay Modal */}
-      {selectedCompletedLevel && (
-        <LevelDetailModal
-          level={selectedCompletedLevel}
-          stars={passport.scoreHistory[selectedCompletedLevel.id] || 5}
-          passport={passport}
-          onClose={() => {
-            setSelectedCompletedLevel(null);
-            synth.playSwipe();
-          }}
-        />
-      )}
-
+      </div>
     </div>
   );
 }

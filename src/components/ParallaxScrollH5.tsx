@@ -29,6 +29,8 @@ interface ParallaxScrollH5Props {
   onClearScore: () => void;
   lastTriggeredStamp: { levelId: string; stars: number; timestamp: number } | null;
   onCompletedLevelClick?: (level: GameLevel) => void;
+  allowDebugControls?: boolean;
+  sceneAssets?: string[];
 }
 
 export default function ParallaxScrollH5({
@@ -38,7 +40,9 @@ export default function ParallaxScrollH5({
   onUpdatePassport,
   onClearScore,
   lastTriggeredStamp,
-  onCompletedLevelClick
+  onCompletedLevelClick,
+  allowDebugControls = true,
+  sceneAssets = []
 }: ParallaxScrollH5Props) {
   
   // Tab control: "home" (Map Scroll), "photos" (Growth Wall), "profile" (Passport detailing)
@@ -86,12 +90,12 @@ export default function ParallaxScrollH5({
         setGoldPillarActive(true);
         setTimeout(() => {
           setGoldPillarActive(false);
-        }, 1500);
+        }, 2500);
       }
 
       // Explode pristine gold spark particles
       setTimeout(() => {
-        const duration = 2 * 1000;
+        const duration = 2500;
         const animationEnd = Date.now() + duration;
         const defaults = { startVelocity: 25, spread: 360, ticks: 50, zIndex: 100 };
 
@@ -249,7 +253,7 @@ export default function ParallaxScrollH5({
       setGoldPillarActive(true);
       setTimeout(() => {
         setGoldPillarActive(false);
-      }, 1500);
+      }, 2500);
     }
 
     const updatedHistory = { ...passport.scoreHistory, [levelId]: stars };
@@ -273,6 +277,20 @@ export default function ParallaxScrollH5({
     }
   };
 
+  const handleLevelClick = (level: GameLevel) => {
+    if (level.status === LevelStatus.LOCKED) {
+      synth.playSwipe();
+      return;
+    }
+
+    synth.playChime();
+    if (level.status === LevelStatus.COMPLETED && onCompletedLevelClick) {
+      onCompletedLevelClick(level);
+      return;
+    }
+    setSelectedLevelId(level.id);
+  };
+
   return (
     <div className="relative w-full h-[760px] max-w-[410px] mx-auto bg-[#020205] text-white rounded-[36px] border-4 border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col font-sans select-none dynamic-glass-glow">
       
@@ -292,6 +310,12 @@ export default function ParallaxScrollH5({
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
           {/* Layer 1: Stars / deep night gradient */}
           <div className="absolute inset-0 bg-[#09090b] bg-[radial-gradient(circle_at_50%_120%,rgba(223,177,91,0.06)_0%,transparent_60%)]" />
+          {sceneAssets[0] && (
+            <div
+              className="absolute inset-0 opacity-18 bg-cover bg-center mix-blend-screen"
+              style={{ backgroundImage: `url(${sceneAssets[0]})`, transform: `translate3d(0, ${scrollPercent * -30}px, 0) scale(1.12)` }}
+            />
+          )}
           
           {/* Layer 2: Misty Ink mountain ranges that move relative to scroll percent */}
           <div 
@@ -549,8 +573,10 @@ export default function ParallaxScrollH5({
                     </div>
 
                     {levels.map((lvl, index) => {
-                      const starRating = passport.scoreHistory[lvl.id];
-                      const isCompleted = starRating !== undefined;
+                      const starRating = passport.scoreHistory[lvl.id] ?? lvl.stars;
+                      const isCompleted = lvl.status === LevelStatus.COMPLETED;
+                      const isActive = lvl.status === LevelStatus.ACTIVE;
+                      const isLocked = lvl.status === LevelStatus.LOCKED;
                       const sequenceNo = index + 1;
 
                       return (
@@ -564,7 +590,7 @@ export default function ParallaxScrollH5({
                         >
                           {/* Drifting Clouds Mist Overlay inside Locked nodes */}
                           <AnimatePresence>
-                            {lvl.status === LevelStatus.LOCKED && (
+                            {isLocked && (
                               <motion.div
                                 initial={{ opacity: 1 }}
                                 animate={{ opacity: 0.96 }}
@@ -575,7 +601,7 @@ export default function ParallaxScrollH5({
                                   x: index % 2 === 0 ? 90 : -90,
                                   transition: { duration: 0.85, ease: "easeOut" }
                                 }}
-                                className="absolute inset-0 z-30 rounded-xl bg-gradient-to-br from-[#0c0c11]/98 via-[#131219]/99 to-[#0c0c11]/98 border border-stone-800/80 flex flex-col items-center justify-center p-3 text-center cursor-not-allowed select-none overflow-hidden shadow-2xl"
+                                className="absolute inset-0 z-30 rounded-xl bg-gradient-to-br from-[#160a0a]/96 via-[#130d13]/98 to-[#0c0c11]/98 border border-red-500/35 flex flex-col items-center justify-center p-3 text-center cursor-not-allowed select-none overflow-hidden shadow-2xl"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   synth.playSwipe(); // Play a small whoosh
@@ -596,15 +622,15 @@ export default function ParallaxScrollH5({
                                 </div>
 
                                 <div className="relative z-10 flex flex-col items-center gap-1.5 px-3">
-                                  <div className="w-8 h-8 rounded-full bg-black/60 border border-yellow-500/20 flex items-center justify-center text-[#dfb15b]/60 shadow-inner">
+                                  <div className="w-9 h-9 rounded-full bg-red-950/70 border border-red-500/40 flex items-center justify-center text-red-300 shadow-[0_0_18px_rgba(239,68,68,0.18)]">
                                     <Lock className="w-3.5 h-3.5 animate-pulse" />
                                   </div>
                                   <div>
-                                    <span className="text-[9.5px] font-serif font-bold tracking-[0.2em] text-[#dfb15b] uppercase block">
-                                      世家天机未泄
+                                    <span className="text-[9.5px] font-serif font-bold tracking-[0.2em] text-red-300 uppercase block">
+                                      红锁未解
                                     </span>
                                     <p className="text-[8px] text-stone-500 font-serif leading-relaxed mt-0.5">
-                                      暂被祥瑞烟雾锁藏<br />请先通关上一级守护
+                                      前序关卡尚未被 NPC 点亮<br />当前不可进入
                                     </p>
                                   </div>
                                 </div>
@@ -614,14 +640,7 @@ export default function ParallaxScrollH5({
 
                           {/* Left node check badge marker */}
                           <button
-                            onClick={() => {
-                              synth.playChime();
-                              if (isCompleted && onCompletedLevelClick) {
-                                onCompletedLevelClick(lvl);
-                              } else {
-                                setSelectedLevelId(lvl.id);
-                              }
-                            }}
+                            onClick={() => handleLevelClick(lvl)}
                             className={`absolute -left-[45px] top-4 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all z-20 outline-none ${
                               isCompleted 
                                 ? "bg-[#dfb15b] border-white text-black shadow-lg shadow-[#dfb15b]/30 scale-110" 
@@ -637,17 +656,12 @@ export default function ParallaxScrollH5({
 
                           {/* Outer card shell with water-ink details */}
                           <div 
-                            onClick={() => {
-                              synth.playChime();
-                              if (isCompleted && onCompletedLevelClick) {
-                                onCompletedLevelClick(lvl);
-                              } else {
-                                setSelectedLevelId(lvl.id);
-                              }
-                            }}
+                            onClick={() => handleLevelClick(lvl)}
                             className={`p-4 rounded-xl border cursor-pointer transition-all ${
                               isCompleted 
                                 ? "bg-stone-900/90 border-[#dfb15b]/40 shadow-lg" 
+                                : isActive
+                                ? "bg-stone-950/80 border-amber-500/25 hover:border-amber-400/45"
                                 : "bg-stone-950/60 border-stone-800/80 hover:border-stone-700/80"
                             }`}
                           >
@@ -655,7 +669,7 @@ export default function ParallaxScrollH5({
                               <span className="text-[9px] font-mono tracking-widest text-[#dfb15b] uppercase">
                                 Stage {lvl.id} • {sequenceNo === 5 ? "FINAL CHOREO" : "TRIAL"}
                               </span>
-                              {isCompleted && (
+                              {starRating > 0 && (
                                 <div className="flex items-center gap-0.5 text-xs text-amber-400 font-bold">
                                   {Array.from({ length: starRating }).map((_, i) => (
                                     <span key={i}>★</span>
@@ -677,9 +691,19 @@ export default function ParallaxScrollH5({
                                 <MapPin className="w-3 h-3 text-[#dfb15b]" />
                                 {lvl.successStandard.slice(0, 16)}...
                               </span>
-                              {!isCompleted && (
+                              {isCompleted && (
+                                <span className="text-[9px] bg-[#dfb15b]/10 text-[#f0d9a4] border border-[#dfb15b]/20 px-1.5 py-0.5 rounded-full font-mono">
+                                  NPC LIT
+                                </span>
+                              )}
+                              {isActive && (
                                 <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-full font-mono animate-pulse">
-                                  WAITING SCAN
+                                  READY
+                                </span>
+                              )}
+                              {isLocked && (
+                                <span className="text-[9px] bg-red-500/10 text-red-300 border border-red-500/20 px-1.5 py-0.5 rounded-full font-mono">
+                                  RED LOCK
                                 </span>
                               )}
                             </div>
@@ -700,7 +724,7 @@ export default function ParallaxScrollH5({
                   </div>
 
                   {/* Global reset mechanism for CEO test audit */}
-                  <div className="pt-6 text-center">
+                  {allowDebugControls && <div className="pt-6 text-center">
                     <button
                       onClick={() => { onClearScore(); synth.playSwipe(); }}
                       className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full border border-stone-800 text-[10px] text-stone-500 font-serif hover:text-stone-300 transition-colors"
@@ -708,7 +732,7 @@ export default function ParallaxScrollH5({
                       <RotateCcw className="w-3 h-3" />
                       重置所有关卡与星级进度
                     </button>
-                  </div>
+                  </div>}
 
                 </div>
               )}
@@ -723,13 +747,28 @@ export default function ParallaxScrollH5({
                   </div>
 
                   {photos.length === 0 ? (
-                    <div className="border border-dashed border-stone-800 rounded-xl p-8 text-center space-y-4">
-                      <span className="w-12 h-12 rounded-full bg-stone-900 border border-stone-800 flex items-center justify-center text-stone-600 mx-auto">
-                        <Camera className="w-6 h-6 animate-pulse" />
-                      </span>
-                      <p className="text-xs font-serif text-stone-500 leading-relaxed max-w-xs mx-auto">
-                        旅伴暂未上传跟拍相片。可点击右手侧的【专业随行摄影端】控制台，点取任意照片，模拟相机5G瞬间同步。
-                      </p>
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-dashed border-stone-800 p-6 text-center">
+                        <p className="text-xs font-serif leading-relaxed text-stone-400">
+                          当前尚未生成现场跟拍照片，先以 4 张实景主视觉替代占位内容，保持客户端观感完整。
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {sceneAssets.slice(0, 4).map((asset, index) => (
+                          <div key={asset} className="overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+                            <img src={asset} alt={`实景图 ${index + 1}`} className="h-32 w-full object-cover" />
+                            <div className="p-3">
+                              <p className="text-[9px] font-mono uppercase tracking-[0.28em] text-amber-300/75">Scene Asset {index + 1}</p>
+                              <p className="mt-2 text-[11px] font-serif text-stone-300">
+                                {index === 0 && "墨染启幕"}
+                                {index === 1 && "奔跑穿行"}
+                                {index === 2 && "联手封坛"}
+                                {index === 3 && "最终主视觉"}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -843,7 +882,7 @@ export default function ParallaxScrollH5({
                       <div className="p-2 bg-stone-900/60 rounded">
                         <span className="block text-[8px] text-stone-500">点亮进度</span>
                         <span className="text-[10px] text-stone-200 font-serif">
-                          已通关 {Object.keys(passport.scoreHistory).length} / 5
+                          已点亮 {passport.npcLitLevels.length} / 5
                         </span>
                       </div>
                     </div>

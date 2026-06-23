@@ -8,6 +8,7 @@
 
 class AudioSynth {
   private ctx: AudioContext | null = null;
+  private ambientNodes: { oscA: OscillatorNode; oscB: OscillatorNode; gain: GainNode } | null = null;
 
   private initCtx() {
     if (!this.ctx) {
@@ -143,6 +144,51 @@ class AudioSynth {
     } catch (e) {
       console.warn(e);
     }
+  }
+
+  startAmbientLoop() {
+    try {
+      const ctx = this.initCtx();
+      if (this.ambientNodes) return;
+
+      const oscA = ctx.createOscillator();
+      const oscB = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscA.type = "sine";
+      oscA.frequency.setValueAtTime(146.83, ctx.currentTime);
+      oscB.type = "triangle";
+      oscB.frequency.setValueAtTime(220, ctx.currentTime);
+
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.045, ctx.currentTime + 1.6);
+
+      oscA.connect(gain);
+      oscB.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscA.start();
+      oscB.start();
+
+      this.ambientNodes = { oscA, oscB, gain };
+    } catch (e) {
+      console.warn("Ambient loop unavailable", e);
+    }
+  }
+
+  stopAmbientLoop() {
+    if (!this.ctx || !this.ambientNodes) return;
+
+    const { oscA, oscB, gain } = this.ambientNodes;
+    const now = this.ctx.currentTime;
+
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+
+    oscA.stop(now + 0.52);
+    oscB.stop(now + 0.52);
+    this.ambientNodes = null;
   }
 }
 

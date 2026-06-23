@@ -3,338 +3,221 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Volume2, VolumeX, SkipForward, Play, Flame, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Flame, Play, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { synth } from "../utils/audio";
+
+const INTRO_DURATION_MS = 15000;
+
+const FALLBACK_SCENES = [
+  {
+    title: "一滴金墨入清泉",
+    subtitle: "黑金微光在雾气里缓缓扩散，开出第一段封藏仪式的呼吸。"
+  },
+  {
+    title: "奔跑穿过白墙黛瓦",
+    subtitle: "孩子在清晨的院落里向前，风、铃与衣袂一起把故事推开。"
+  },
+  {
+    title: "大手叠小手，朱泥成契",
+    subtitle: "联结不再只是誓言，而是被看见、被按下、被真正点亮。"
+  },
+  {
+    title: "金印落下，主视觉启幕",
+    subtitle: "当封坛完成，请以传人之名进入属于你们的黑金长卷。"
+  }
+] as const;
 
 interface PrerollIntroProps {
   onComplete: () => void;
+  allowSkip?: boolean;
+  bgmSrc?: string;
+  sceneAssets?: string[];
 }
 
-export default function PrerollIntro({ onComplete }: PrerollIntroProps) {
-  const [currentScene, setCurrentScene] = useState<number>(0);
-  const [muted, setMuted] = useState<boolean>(true);
-  const [isStarted, setIsStarted] = useState<boolean>(false);
+export default function PrerollIntro({
+  onComplete,
+  allowSkip = true,
+  bgmSrc,
+  sceneAssets = []
+}: PrerollIntroProps) {
+  const [isStarted, setIsStarted] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentScene, setCurrentScene] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Auto progression of cinematic scenes
+  const scenes = useMemo(
+    () =>
+      FALLBACK_SCENES.map((scene, index) => ({
+        ...scene,
+        image: sceneAssets[index] ?? sceneAssets[sceneAssets.length - 1] ?? ""
+      })),
+    [sceneAssets]
+  );
+
+  const finishIntro = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    synth.stopAmbientLoop();
+    onComplete();
+  }, [onComplete]);
+
   useEffect(() => {
     if (!isStarted) return;
-    
-    const timers = [
-      setTimeout(() => { setCurrentScene(1); if(!muted) synth.playWaterDrop(); }, 3500),
-      setTimeout(() => { setCurrentScene(2); if(!muted) synth.playSwipe(); }, 7500),
-      setTimeout(() => { setCurrentScene(3); if(!muted) synth.playChime(); }, 11500),
+
+    const sceneDuration = INTRO_DURATION_MS / scenes.length;
+    const startedAt = Date.now();
+
+    if (bgmSrc) {
+      const audio = new Audio(bgmSrc);
+      audio.loop = true;
+      audio.preload = "auto";
+      audio.volume = 0.46;
+      audio.muted = muted;
+      audioRef.current = audio;
+      audio.play().catch(() => synth.startAmbientLoop());
+    } else {
+      synth.startAmbientLoop();
+    }
+
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const nextProgress = Math.min(elapsed / INTRO_DURATION_MS, 1);
+      setProgress(nextProgress);
+      setCurrentScene(Math.min(Math.floor(elapsed / sceneDuration), scenes.length - 1));
+    }, 100);
+
+    const soundTimers = [
+      window.setTimeout(() => synth.playWaterDrop(), 1200),
+      window.setTimeout(() => synth.playSwipe(), 5600),
+      window.setTimeout(() => synth.playChime(), 10800)
     ];
+    const completeTimer = window.setTimeout(finishIntro, INTRO_DURATION_MS);
 
     return () => {
-      timers.forEach(clearTimeout);
+      window.clearInterval(interval);
+      soundTimers.forEach(window.clearTimeout);
+      window.clearTimeout(completeTimer);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      synth.stopAmbientLoop();
     };
-  }, [isStarted, muted]);
+  }, [bgmSrc, finishIntro, isStarted, muted, scenes.length]);
 
-  const toggleSound = () => {
-    const nextMute = !muted;
-    setMuted(nextMute);
-    if (!nextMute) {
-      synth.playChime();
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = muted;
     }
-  };
+    if (muted) {
+      synth.stopAmbientLoop();
+    } else if (isStarted && !bgmSrc) {
+      synth.startAmbientLoop();
+    }
+  }, [bgmSrc, isStarted, muted]);
 
-  const handleStartIntro = () => {
+  const handleStart = () => {
     setIsStarted(true);
     setMuted(false);
     synth.playChime();
   };
 
-  const skipIntro = () => {
-    synth.playSwipe();
-    onComplete();
-  };
-
   if (!isStarted) {
     return (
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#020205]/95 backdrop-blur-xl text-[#eee] p-6 text-center select-none overflow-hidden">
-        {/* Decorative Golden Ink Rings */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.1)_0%,transparent_70%)] rounded-full blur-3xl pointer-events-none" />
-        
-        <motion.div 
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.2 }}
-          className="relative z-10 space-y-8"
-        >
-          <div className="flex justify-center">
-            <span className="w-16 h-16 rounded-full border border-orange-500/30 flex items-center justify-center text-orange-400 bg-orange-500/5 shadow-lg shadow-orange-500/5 animate-pulse">
-              <Flame className="w-7 h-7" />
-            </span>
+      <div className="absolute inset-0 z-50 overflow-hidden bg-[#040507]/95 text-white">
+        {scenes[3]?.image && <img src={scenes[3].image} alt="主视觉开场" className="absolute inset-0 h-full w-full object-cover opacity-35" />}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(244,207,124,0.28),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0.15)_0%,rgba(0,0,0,0.68)_42%,rgba(0,0,0,0.92)_100%)]" />
+        <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
+          <div className="rounded-full border border-amber-300/25 bg-black/30 p-5 backdrop-blur-md">
+            <Flame className="h-8 w-8 text-amber-300" />
           </div>
-
-          <div className="space-y-3">
-            <h1 className="text-3xl font-serif tracking-[0.25em] text-white">小小封藏传人</h1>
-            <p className="text-xs tracking-[0.4em] text-orange-400 font-mono uppercase">Interactive Cinematic Journey</p>
-          </div>
-
-          <p className="text-slate-400 font-serif text-sm px-6 max-w-xs mx-auto leading-relaxed">
-            建议开启声音，体验东方水墨与百年陈酿的电影级声画旅程
+          <p className="mt-8 text-[11px] uppercase tracking-[0.45em] text-amber-200/80">Hermes D19 Prelude</p>
+          <h1 className="mt-4 text-3xl font-serif tracking-[0.22em] text-white">小小封藏传人</h1>
+          <p className="mt-5 max-w-xs text-sm leading-7 text-stone-300">
+            点击下方按钮后立即进入 15 秒电影感开场，并同步启动背景音乐接口。
           </p>
-
-          <div className="pt-6">
-            <button
-              onClick={handleStartIntro}
-              className="px-8 py-3.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold tracking-widest text-xs uppercase rounded-full shadow-lg shadow-orange-500/20 hover:shadow-orange-500/45 active:scale-95 transition-all outline-none cursor-pointer"
-            >
-              踏浪入卷 • 开启体验
-            </button>
-          </div>
-        </motion.div>
+          <button
+            onClick={handleStart}
+            className="mt-10 inline-flex items-center gap-3 rounded-full border border-amber-200/25 bg-gradient-to-r from-[#dca54e] via-[#f2cf8d] to-[#c38b36] px-8 py-4 text-sm font-semibold tracking-[0.24em] text-black shadow-[0_18px_40px_rgba(217,164,79,0.28)] transition-transform hover:scale-[1.02] active:scale-95"
+          >
+            <Play className="h-4 w-4 fill-current" />
+            开启修行
+          </button>
+        </div>
       </div>
     );
   }
 
+  const activeScene = scenes[currentScene];
+
   return (
-    <div className="absolute inset-0 z-50 bg-[#09090b] text-[#dfb15b] overflow-hidden select-none flex flex-col justify-between p-6">
-      
-      {/* Sound & Skip Controllers */}
-      <div className="absolute top-6 left-6 right-6 z-50 flex items-center justify-between">
-        <button
-          onClick={toggleSound}
-          className="p-2.5 rounded-full bg-black/40 border border-[#dfb15b]/20 text-[#dfb15b] backdrop-blur-md active:scale-90 transition-all outline-none"
-        >
-          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-        </button>
-
-        <button
-          onClick={skipIntro}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 border border-[#dfb15b]/20 text-xs tracking-wider text-stone-300 font-mono backdrop-blur-md active:scale-90 transition-all outline-none"
-        >
-          跳过预告 <SkipForward className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Cinematic Content Carousel */}
-      <div className="flex-1 flex items-center justify-center relative">
+    <div className="absolute inset-0 z-50 overflow-hidden bg-[#050609] text-white">
+      {activeScene.image && (
         <AnimatePresence mode="wait">
-          
-          {/* Scene 1: Gold Ink Splash (0-3.5s) */}
-          {currentScene === 0 && (
-            <motion.div
-              key="scene0"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
-            >
-              {/* Dynamic Abstract Ink Background */}
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: [1, 1.4, 1.8], opacity: [0.1, 0.45, 0] }}
-                  transition={{ duration: 3.5, ease: "easeOut" }}
-                  className="w-96 h-96 rounded-full bg-gradient-to-r from-[#dfb15b]/20 via-[#dfb15b]/5 to-transparent blur-3xl"
-                />
-                <motion.div
-                  initial={{ rotate: 0 }}
-                  animate={{ rotate: 120 }}
-                  transition={{ duration: 3.5, ease: "linear" }}
-                  className="absolute w-72 h-72 border border-[#dfb15b]/5 rounded-full"
-                />
-              </div>
-
-              <div className="relative z-10 space-y-6">
-                <motion.div
-                  initial={{ letterSpacing: "0.15em", y: 15, opacity: 0 }}
-                  animate={{ letterSpacing: "0.45em", y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3, duration: 2 }}
-                  className="text-stone-300 font-serif text-sm tracking-widest leading-loose"
-                >
-                  金 墨 晕 染
-                </motion.div>
-                <motion.h2
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 1, duration: 1.5 }}
-                  className="text-2xl font-serif text-[#dfb15b] tracking-[0.2em] font-medium"
-                >
-                  时间 的 旅程 自此 开启
-                </motion.h2>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Scene 2: Hanfu Journey to Water Town (3.5s-7.5s) */}
-          {currentScene === 1 && (
-            <motion.div
-              key="scene1"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
-            >
-              {/* Misty Oriental Landscape Background */}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#141416] via-[#09090b] to-[#121214] opacity-50" />
-              <div className="absolute inset-0 flex items-end justify-center pb-24 overflow-hidden opacity-30">
-                {/* Silhouette Mountains */}
-                <svg className="w-full h-40 text-stone-800" viewBox="0 0 1440 200" fill="currentColor">
-                  <path d="M0,120 L150,70 L340,150 L560,90 L790,170 C840,130 920,80 1010,120 L1200,60 L1440,160 L1440,200 L0,200 Z" />
-                </svg>
-                {/* Soft Clouds Floating */}
-                <motion.div
-                  animate={{ x: [-80, 80] }}
-                  transition={{ repeat: Infinity, repeatType: "mirror", duration: 12, ease: "linear" }}
-                  className="absolute bottom-20 left-12 w-48 h-10 bg-white/5 rounded-full filter blur-xl"
-                />
-              </div>
-
-              <div className="relative z-10 space-y-6 max-w-xs">
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 1 }}
-                  className="inline-block px-3 py-1 bg-[#dfb15b]/10 rounded border border-[#dfb15b]/20 text-[10px] tracking-widest uppercase text-stone-300"
-                >
-                  灵山大川 • 白墙黛瓦
-                </motion.div>
-                <h3 className="text-xl font-serif tracking-widest text-[#dfb15b] leading-relaxed">
-                  幼羽轻拂尘网尽
-                  <br />
-                  <span className="text-stone-300">携子寻迹入幽潭</span>
-                </h3>
-                <p className="text-xs text-stone-400 font-serif font-light tracking-wide leading-relaxed">
-                  跨越千山，孩子换上古风罗衫，踏出身份苏醒的第一部篇章
-                </p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Scene 3: Hand Seal and Candle Firewax (7.5s-11.5s) */}
-          {currentScene === 2 && (
-            <motion.div
-              key="scene2"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
-            >
-              {/* Fire Wax Melter Simulated Glow */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <motion.div
-                  animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.35, 0.15] }}
-                  transition={{ repeat: Infinity, duration: 3 }}
-                  className="w-72 h-72 rounded-full bg-[#df805b]/15 blur-3xl"
-                />
-              </div>
-
-              <div className="relative z-10 space-y-6 max-w-xs">
-                <div className="flex justify-center">
-                  <span className="w-12 h-12 rounded-full flex items-center justify-center bg-[#df5b5b]/10 text-[#df5b5b] border border-[#df5b5b]/20 shadow-inner">
-                    <Flame className="w-6 h-6 animate-pulse" />
-                  </span>
-                </div>
-                <h3 className="text-xl font-serif tracking-widest text-stone-200 leading-relaxed">
-                  大手叠小手，朱泥印契约
-                </h3>
-                <p className="text-xs text-stone-400 font-serif font-light tracking-wide leading-relaxed">
-                  在烈火淬炼的红色漆瓦上，封藏下父子一世相守的家训家风
-                </p>
-                <div className="flex justify-center gap-2 pt-2">
-                  <span className="w-1.5 h-1.5 bg-[#dfb15b] rounded-full animate-ping" />
-                  <span className="text-[10px] text-[#dfb15b]/80 font-mono tracking-widest uppercase">
-                    封藏大典模拟中...
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Scene 4: Fixed Banner Custom Quote (11.5s-15s+) */}
-          {currentScene === 3 && (
-            <motion.div
-              key="scene3"
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1.2 }}
-              className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
-            >
-              <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                <span className="text-[12rem] font-serif text-[#dfb15b] select-none uppercase tracking-tighter">
-                  封
-                </span>
-              </div>
-
-              <div className="relative z-10 space-y-12 max-w-sm">
-                
-                {/* Brand calligraphy */}
-                <div className="space-y-4">
-                  <motion.div
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ delay: 0.5, duration: 1 }}
-                    className="h-[1px] bg-gradient-to-r from-transparent via-[#dfb15b]/40 to-transparent w-36 mx-auto"
-                  />
-                  
-                  <motion.h2
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8, duration: 1.2 }}
-                    className="text-3xl font-serif text-[#dfb15b] tracking-[0.35em] leading-loose font-bold"
-                  >
-                    一封家训
-                    <br />
-                    守护百年
-                  </motion.h2>
-
-                  <motion.div
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ delay: 0.5, duration: 1 }}
-                    className="h-[1px] bg-gradient-to-r from-transparent via-[#dfb15b]/40 to-transparent w-36 mx-auto"
-                  />
-                </div>
-
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1.5, duration: 1 }}
-                  className="text-xs text-stone-400 font-serif leading-relaxed px-4 tracking-wider"
-                >
-                  传承，不仅是一注佳香，更是世代家训风骨在时光里的封藏与绽放。
-                </motion.p>
-
-                {/* Confirm Call to Action */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 2, duration: 1 }}
-                  className="pt-4"
-                >
-                  <button
-                    onClick={skipIntro}
-                    className="flex items-center gap-2 mx-auto px-7 py-3.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold tracking-widest text-xs uppercase rounded-full shadow-lg hover:shadow-orange-500/25 transition-all outline-none cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4 text-white animate-spin" />
-                    开启传人勋章
-                  </button>
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
-
+          <motion.img
+            key={activeScene.image}
+            src={activeScene.image}
+            alt={activeScene.title}
+            initial={{ opacity: 0, scale: 1.08 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.04 }}
+            transition={{ duration: 1.1 }}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
         </AnimatePresence>
+      )}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(244,207,124,0.18),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0.55)_40%,rgba(0,0,0,0.92)_100%)]" />
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2240%22%20height%3D%2240%22%20viewBox%3D%220%200%2040%2040%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M0%2020h40M20%200v40%22%20stroke%3D%22rgba(255,255,255,0.04)%22%20stroke-width%3D%221%22/%3E%3C/svg%3E')] opacity-20" />
+
+      <div className="absolute left-5 right-5 top-5 z-20 flex items-center justify-between">
+        <button
+          onClick={() => setMuted((prev) => !prev)}
+          className="rounded-full border border-white/10 bg-black/35 p-2.5 text-stone-200 backdrop-blur-md"
+        >
+          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+        </button>
+        {allowSkip && (
+          <button
+            onClick={finishIntro}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-2 text-[10px] uppercase tracking-[0.28em] text-stone-200 backdrop-blur-md"
+          >
+            跳过
+            <SkipForward className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* Slide dots tracking */}
-      <div className="flex justify-center gap-2 pb-4 z-40">
-        {[0, 1, 2, 3].map((idx) => (
-          <span
-            key={idx}
-            className={`h-1.5 rounded-full transition-all duration-500 ${
-              currentScene === idx ? "w-6 bg-[#dfb15b]" : "w-1.5 bg-stone-700"
-            }`}
-          />
-        ))}
+      <div className="relative z-10 flex h-full flex-col justify-end px-7 pb-10 pt-24">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeScene.title}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.7 }}
+            className="rounded-[28px] border border-white/10 bg-black/25 p-6 backdrop-blur-xl"
+          >
+            <p className="text-[10px] uppercase tracking-[0.4em] text-amber-200/75">Scene {String(currentScene + 1).padStart(2, "0")}</p>
+            <h2 className="mt-4 text-2xl font-serif leading-relaxed tracking-[0.16em] text-[#f4dbac]">
+              {activeScene.title}
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-stone-300">{activeScene.subtitle}</p>
+          </motion.div>
+        </AnimatePresence>
+
+        <div className="mt-6 flex items-center gap-3">
+          <div className="h-[2px] flex-1 overflow-hidden rounded-full bg-white/10">
+            <motion.div
+              className="h-full bg-gradient-to-r from-[#d8a651] via-[#f7db9e] to-white"
+              animate={{ width: `${progress * 100}%` }}
+            />
+          </div>
+          <span className="text-[10px] uppercase tracking-[0.32em] text-stone-400">{Math.round(progress * 100)}%</span>
+        </div>
       </div>
     </div>
   );
