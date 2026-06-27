@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>《小小封藏传人》三端操作手册</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f1e8;
+        --paper: #fffdfa;
+        --ink: #1f1b16;
+        --muted: #6e6254;
+        --gold: #9f7a2b;
+        --line: #d9cfbf;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(180deg, #efe7d9 0%, var(--bg) 100%);
+        color: var(--ink);
+        line-height: 1.72;
+      }
+
+      .page {
+        width: 920px;
+        margin: 24px auto 48px;
+        padding: 40px 48px 56px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        box-shadow: 0 20px 60px rgba(62, 43, 18, 0.12);
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: "PingFang SC", "Songti SC", serif;
+        letter-spacing: 0.02em;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+      }
+
+      h2 {
+        margin-top: 40px;
+        padding-bottom: 8px;
+        font-size: 24px;
+        border-bottom: 2px solid var(--line);
+      }
+
+      h3 {
+        margin-top: 28px;
+        margin-bottom: 10px;
+        font-size: 19px;
+        color: var(--gold);
+      }
+
+      p,
+      li {
+        font-size: 15px;
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: #f4ede2;
+        border: 1px solid #eadfcb;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.92em;
+      }
+
+      .lead {
+        color: var(--muted);
+      }
+
+      .callout {
+        margin: 18px 0 24px;
+        padding: 16px 18px;
+        border-radius: 14px;
+        border: 1px solid #e7dcc7;
+        background: #fcf7ef;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .figure {
+        margin: 20px 0 28px;
+        page-break-inside: avoid;
+      }
+
+      .figure img {
+        display: block;
+        width: 100%;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      }
+
+      .figure figcaption {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+
+      .section {
+        page-break-inside: avoid;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .page {
+          width: auto;
+          margin: 0;
+          padding: 18mm 16mm 20mm;
+          border: 0;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>《小小封藏传人》三端操作手册</h1>
+      <p class="lead">适用于本地开发环境 <code>http://127.0.0.1:3002</code>，覆盖客户端、NPC 端、摄影师端三套现场操作流程。</p>
+
+      <div class="callout">
+        <p><strong>三端入口</strong></p>
+        <ul>
+          <li>客户端：<code>http://127.0.0.1:3002/?role=customer</code></li>
+          <li>NPC 端：<code>http://127.0.0.1:3002/?role=npc</code></li>
+          <li>摄影师端：<code>http://127.0.0.1:3002/?role=photographer</code></li>
+        </ul>
+        <p><strong>测试 PIN</strong></p>
+        <ul>
+          <li>NPC：<code>9527</code></li>
+          <li>摄影师：<code>6688</code></li>
+        </ul>
+      </div>
+
+      <section class="section">
+        <h2>一、客户端操作手册</h2>
+        <h3>1. 客户进入方式</h3>
+        <p>打开客户专属地址 <code>?role=customer</code>。如果该家庭已续接旧护照，系统可能直接回到地图页；片头结束后，点击右上角 <code>重走激活仪式</code> 可回到填写姓名和祠堂点香流程。</p>
+
+        <figure class="figure">
+          <img src="../operation-manual-assets/customer-map.png" alt="客户端地图与片头" />
+          <figcaption>客户端地图与片头。点击“开启修行”进入 15 秒电影感开场。</figcaption>
+        </figure>
+
+        <h3>2. 重走激活仪式</h3>
+        <p>如果客户不是首次进入，地图右上会出现 <code>重走激活仪式</code>。点击后回到激活页，重新填写孩子信息和家训。</p>
+
+        <figure class="figure">
+          <img src="../operation-manual-assets/customer-activation.png" alt="客户端填写页" />
+          <figcaption>填写姓氏、孩子名、家训，并选择一套华服后点击“唤醒护照 • 开启传人”。</figcaption>
+        </figure>
+
+        <h3>3. 祠堂点香</h3>
+        <p>激活页提交后会进入祠堂仪式页。客户需按顺序完成点香、祭拜与启智三个动作，完成后才正式激活护照。</p>
+
+        <figure class="figure">
+          <img src="../operation-manual-assets/customer-shrine.png" alt="客户端祠堂仪式" />
+          <figcaption>祠堂仪式页。按顺序完成点香、祭拜和启智后进入正式时间地图。</figcaption>
+        </figure>
+
+        <h3>4. 现场配合方式</h3>
+        <ul>
+          <li>在 <code>传人印信</code> 页向 NPC 出示实时二维码，供 NPC 扫码授勋。</li>
+          <li>在需要上传照片时，向摄影师出示客户专属上传链接或护照号。</li>
+          <li>二维码票据为一次性使用；被 NPC 消费后，需要刷新印信页生成新票据。</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>二、NPC 端操作手册</h2>
+        <h3>1. NPC 登录</h3>
+        <p>打开 <code>?role=npc</code>，输入工作人员姓名和 PIN <code>9527</code>。验证通过后进入评分控制台。</p>
+
+        <figure class="figure">
+          <img src="../operation-manual-assets/npc-dashboard.png" alt="NPC 控制台" />
+          <figcaption>NPC 控制台，集成家庭名单导入、扫码绑定客户、关卡授勋三块核心功能。</figcaption>
+        </figure>
+
+        <h3>2. 导入家庭名单</h3>
+        <ul>
+          <li>支持最多 100 个家庭。</li>
+          <li>推荐表头：<code>家庭名称 / 联系人 / 手机号 / 备注</code>。</li>
+          <li>也兼容：<code>familyLabel / contactName / contactPhone / note</code>。</li>
+          <li>同一手机号只能对应一个家庭。</li>
+          <li>导入成功后覆盖当前名单，并记录前台报到日志。</li>
+        </ul>
+        <p>如需模板，可点击 <code>下载 UTF-8 模板 CSV</code> 或 <code>下载 Excel 模板 .xlsx</code>。</p>
+
+        <h3>3. 绑定客户并授勋</h3>
+        <ol>
+          <li>扫描客户出示的专属二维码，或粘贴二维码内容 / 护照号 <code>XC-...</code>。</li>
+          <li>点击 <code>核验</code>，确认当前客户已被锁定。</li>
+          <li>选择当前关卡并点亮星级。</li>
+          <li>点击 <code>确认授勋，点亮当前关口勋章</code>。</li>
+        </ol>
+        <p>授勋后，客户端会实时收到勋章更新，并解锁下一关。评为 <code>5 星</code> 时，客户端会触发 2.5 秒金色光柱特效。</p>
+      </section>
+
+      <section class="section">
+        <h2>三、摄影师端操作手册</h2>
+        <div class="two-col">
+          <div>
+            <h3>1. 摄影师登录</h3>
+            <p>打开 <code>?role=photographer</code>，输入工作人员姓名和 PIN <code>6688</code>。</p>
+            <figure class="figure">
+              <img src="../operation-manual-assets/photographer-login-filled.png" alt="摄影师门禁页" />
+              <figcaption>摄影师门禁页。输入姓名和 PIN 后进入上传后台。</figcaption>
+            </figure>
+          </div>
+          <div>
+            <h3>2. 摄影师后台</h3>
+            <p>后台支持绑定客户、上传照片、填写标题与点位，并将内容实时送入客户 H5 长卷。</p>
+            <figure class="figure">
+              <img src="../operation-manual-assets/photographer-dashboard.png" alt="摄影师控制台" />
+              <figcaption>摄影师控制台。先绑定客户，再上传现场原图或成片。</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <h3>3. 上传流程</h3>
+        <ol>
+          <li>通过客户专属上传链接、二维码内容或护照号 <code>XC-...</code> 绑定客户。</li>
+          <li>点击 <code>上传照片</code> 选择本地图片。</li>
+          <li>填写标题、拍摄点位，可选填摄影备注。</li>
+          <li>点击 <code>送入 H5 长卷</code>，照片会同步到当前家庭的相片长卷。</li>
+        </ol>
+      </section>
+
+      <section class="section">
+        <h2>四、现场推荐顺序</h2>
+        <ol>
+          <li>前台在 NPC 端导入本场家庭名单。</li>
+          <li>家庭到场后，客户在手机端输入手机号完成核验。</li>
+          <li>客户首次进入时完成填写信息和祠堂仪式。</li>
+          <li>客户在每一关结束后向 NPC 出示实时二维码。</li>
+          <li>NPC 扫码锁定客户并点亮当前关卡勋章。</li>
+          <li>摄影师按需绑定客户并上传现场照片。</li>
+          <li>客户回到手机端查看地图解锁、勋章状态与相片长卷。</li>
+        </ol>
+      </section>
+
+      <section class="section">
+        <h2>五、常见问题</h2>
+        <h3>1. 为什么客户一进去就是地图？</h3>
+        <p>该家庭已经续接过旧护照。等待片头结束后，点击右上角 <code>重走激活仪式</code> 即可回到填写页。</p>
+
+        <h3>2. 为什么 NPC 扫第二次二维码失败？</h3>
+        <p>客户二维码票据是一次性的。让客户刷新 <code>传人印信</code> 页，生成新的二维码后再次扫码。</p>
+
+        <h3>3. 为什么名单导入后有乱码？</h3>
+        <p>优先使用 Excel 模板，或将源 CSV 另存为 <code>UTF-8 CSV</code> 后重新导入。</p>
+
+        <h3>4. 为什么工作人员能直接进后台？</h3>
+        <p>前提是设备上已有有效门禁会话。当前实现下，工作人员登录成功后，本设备授权默认有效 8 小时。</p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -13,13 +13,16 @@ import {
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { synth } from "../utils/audio";
-import { GameLevel, UserPassport, LivePhoto, LevelStatus } from "../types";
+import { GameLevel, UserPassport, LivePhoto, LevelStatus, VerifiedFamilySession } from "../types";
+import { maskPhone } from "../utils/customerAccess";
+import { looksLikeMojibake, repairMojibakeText } from "../utils/textEncoding";
 
 import WorshipShrine from "./WorshipShrine";
 import SpiritStoneGame from "./SpiritStoneGame";
 import CatchFishGame from "./CatchFishGame";
 import BotanicalLibrary from "./BotanicalLibrary";
 import LeaderboardRank from "./LeaderboardRank";
+import PassportQrCode from "./PassportQrCode";
 
 interface ParallaxScrollH5Props {
   levels: GameLevel[];
@@ -31,6 +34,14 @@ interface ParallaxScrollH5Props {
   onCompletedLevelClick?: (level: GameLevel) => void;
   allowDebugControls?: boolean;
   sceneAssets?: string[];
+  verifiedFamily?: VerifiedFamilySession | null;
+  passportScanPayload?: string;
+  customerResumeUrl?: string;
+  npcResumeUrl?: string;
+  photographerResumeUrl?: string;
+  onVerifyCustomerAccess?: (phone: string) => Promise<{ ok: boolean; message: string }>;
+  onClearCustomerAccess?: () => void;
+  onRestartCustomerActivation?: () => void;
 }
 
 export default function ParallaxScrollH5({
@@ -42,7 +53,15 @@ export default function ParallaxScrollH5({
   lastTriggeredStamp,
   onCompletedLevelClick,
   allowDebugControls = true,
-  sceneAssets = []
+  sceneAssets = [],
+  verifiedFamily = null,
+  passportScanPayload = "",
+  customerResumeUrl = "",
+  npcResumeUrl = "",
+  photographerResumeUrl = "",
+  onVerifyCustomerAccess,
+  onClearCustomerAccess,
+  onRestartCustomerActivation
 }: ParallaxScrollH5Props) {
   
   // Tab control: "home" (Map Scroll), "photos" (Growth Wall), "profile" (Passport detailing)
@@ -55,6 +74,8 @@ export default function ParallaxScrollH5({
   const [customMottoInput, setCustomMottoInput] = useState<string>(passport.customMotto || "封一坛陈酿，守护百年家风。");
   const [selectedAvatar, setSelectedAvatar] = useState<string>(passport.avatarStyle || "汉服青衣");
   const [worshipActive, setWorshipActive] = useState<boolean>(false);
+  const [verificationPhoneInput, setVerificationPhoneInput] = useState<string>(passport.contactPhone || "");
+  const [accessFeedback, setAccessFeedback] = useState<{ ok: boolean; message: string } | null>(null);
   
   // Mini trials interactions
   const [springCleanProgress, setSpringCleanProgress] = useState<number>(0);
@@ -74,6 +95,22 @@ export default function ParallaxScrollH5({
   // Parallax Scroller Offset Ref
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollPercent, setScrollPercent] = useState<number>(0);
+  const nextUnlockLevel = levels.find((level) => !passport.npcLitLevels.includes(level.id));
+  const hasCustomerAccess = Boolean(verifiedFamily?.contactPhone || passport.contactPhone);
+  const verifiedFamilyLabelText = repairMojibakeText(passport.familyLabel || verifiedFamily?.familyLabel || "");
+  const verifiedContactNameText = repairMojibakeText(passport.contactName || verifiedFamily?.contactName || "");
+  const safeVerifiedFamilyLabel = verifiedFamilyLabelText && !looksLikeMojibake(verifiedFamilyLabelText)
+    ? verifiedFamilyLabelText
+    : "已核验家庭";
+  const safeVerifiedContactName = verifiedContactNameText && !looksLikeMojibake(verifiedContactNameText)
+    ? verifiedContactNameText
+    : "已核验联系人";
+
+  useEffect(() => {
+    if (passport.contactPhone) {
+      setVerificationPhoneInput(passport.contactPhone);
+    }
+  }, [passport.contactPhone]);
 
   // Catch NPC WebSocket Star Trigger
   useEffect(() => {
@@ -152,16 +189,42 @@ export default function ParallaxScrollH5({
 
   const handleFinalWorshipPublish = () => {
     onUpdatePassport({
+      rosterFamilyId: passport.rosterFamilyId,
+      familyLabel: passport.familyLabel,
+      contactName: passport.contactName,
+      contactPhone: passport.contactPhone,
       childName: nameInput,
       familyName: familyInput,
       customMotto: customMottoInput,
       avatarStyle: selectedAvatar,
-      activated: true,
-      scoreHistory: { ...passport.scoreHistory, "01": 5 }
+      activated: true
     });
     synth.playChime();
     setWorshipActive(false);
     setActiveTab("map");
+  };
+
+  const handleVerifyAccess = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!onVerifyCustomerAccess) return;
+
+    const result = await onVerifyCustomerAccess(verificationPhoneInput);
+    setAccessFeedback(result);
+
+    if (result.ok) {
+      synth.playChime();
+      return;
+    }
+
+    synth.playSwipe();
+  };
+
+  const handleResetCustomerAccess = () => {
+    setVerificationPhoneInput("");
+    setAccessFeedback(null);
+    setWorshipActive(false);
+    onClearCustomerAccess?.();
+    synth.playSwipe();
   };
 
   // Micro game 02: Clean spring water
@@ -303,8 +366,21 @@ export default function ParallaxScrollH5({
         <span className="font-mono text-slate-500">LIVE RITUALS</span>
       </div>
 
+      {passport.activated && hasCustomerAccess && onRestartCustomerActivation && (
+        <div className="absolute right-4 top-12 z-[35]">
+          <button
+            type="button"
+            onClick={onRestartCustomerActivation}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-[10px] tracking-[0.16em] text-stone-200 backdrop-blur-xl transition-colors hover:text-white"
+          >
+            <RotateCcw className="h-3 w-3" />
+            重走激活仪式
+          </button>
+        </div>
+      )}
+
       {/* Main body viewport */}
-      <div className="flex-1 overflow-hidden relative pt-8 pb-16">
+      <div className="mobile-safe-content flex-1 overflow-hidden relative pt-8">
         
         {/* BACKGROUND 3D PARALLAX SIMULATION FOR INNER SCREEN */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
@@ -350,7 +426,67 @@ export default function ParallaxScrollH5({
               exit={{ opacity: 0, scale: 1.04 }}
               className="absolute inset-0 z-20 flex flex-col justify-between p-6 bg-[#0a0a0c]/95 overflow-y-auto"
             >
-              {worshipActive ? (
+              {!hasCustomerAccess ? (
+                <div className="space-y-6 pt-4">
+                  <div className="text-center space-y-2">
+                    <span className="text-[10px] tracking-[0.3em] font-mono text-stone-500 block uppercase">Family Check-In</span>
+                    <h2 className="text-2xl font-serif tracking-widest text-[#dfb15b] font-medium">家庭团手机号验团</h2>
+                    <div className="h-[1px] bg-gradient-to-r from-transparent via-[#dfb15b]/30 to-transparent w-32 mx-auto mt-2" />
+                    <p className="mx-auto max-w-xs text-[11px] leading-6 text-stone-400">
+                      仅已录入本场家庭团名单的手机号可进入游戏系统。请在报到处完成核验后，再为孩子激活传人护照。
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleVerifyAccess} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-serif tracking-widest text-stone-400 block">报名手机号</label>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={11}
+                        value={verificationPhoneInput}
+                        onChange={(e) => setVerificationPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                        placeholder="请输入报团登记手机号"
+                        className="w-full bg-stone-900 border border-stone-800 focus:border-[#dfb15b]/80 rounded px-3 py-3 text-center font-mono text-base text-[#dfb15b] outline-none tracking-[0.18em]"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-[10px] text-stone-500">
+                      <div className="rounded-xl border border-stone-800 bg-stone-950/80 px-3 py-3">
+                        <p className="font-mono uppercase tracking-[0.2em] text-stone-600">Roster Gate</p>
+                        <p className="mt-2 leading-5">命中预录入家庭名单后，才开放当前终端的护照激活入口。</p>
+                      </div>
+                      <div className="rounded-xl border border-stone-800 bg-stone-950/80 px-3 py-3">
+                        <p className="font-mono uppercase tracking-[0.2em] text-stone-600">Onsite Check-In</p>
+                        <p className="mt-2 leading-5">不在名单内的手机号无法直接进入，请由前台核对团单后处理。</p>
+                      </div>
+                    </div>
+
+                    {accessFeedback && (
+                      <div
+                        className={`rounded-xl border px-3 py-3 text-[11px] leading-5 ${
+                          accessFeedback.ok
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                            : "border-red-500/30 bg-red-500/10 text-red-300"
+                        }`}
+                      >
+                        {accessFeedback.message}
+                      </div>
+                    )}
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-[#dfb15b] hover:bg-white text-black font-semibold text-xs uppercase tracking-widest rounded transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-[#dfb15b]/10"
+                      >
+                        <Shield className="w-4 h-4" />
+                        核验手机号 • 进入报到
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : worshipActive ? (
                 <WorshipShrine
                   familyName={familyInput}
                   childName={nameInput}
@@ -364,6 +500,25 @@ export default function ParallaxScrollH5({
                     <span className="text-[10px] tracking-[0.3em] font-mono text-stone-500 block uppercase">Passport Activation</span>
                     <h2 className="text-2xl font-serif tracking-widest text-[#dfb15b] font-medium">唤醒传人印记</h2>
                     <div className="h-[1px] bg-gradient-to-r from-transparent via-[#dfb15b]/30 to-transparent w-32 mx-auto mt-2" />
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-300">Verified Family</p>
+                        <h3 className="text-sm font-serif text-stone-100">{safeVerifiedFamilyLabel}</h3>
+                        <p className="text-[11px] leading-5 text-stone-400">
+                          联系人：{safeVerifiedContactName} · 手机号：{maskPhone(passport.contactPhone || verifiedFamily?.contactPhone || "")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleResetCustomerAccess}
+                        className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] tracking-[0.18em] text-stone-300 transition-colors hover:text-white"
+                      >
+                        切换家庭
+                      </button>
+                    </div>
                   </div>
 
                   <form onSubmit={handleRegisterPassport} className="space-y-4">
@@ -458,7 +613,7 @@ export default function ParallaxScrollH5({
                     <Shield className="w-5 h-5 animate-pulse" />
                   </span>
                   <p className="text-[9px] text-stone-500 font-serif leading-relaxed">
-                    提示：通过初审后，系统将为您自成实时护照码。您可在2天1夜的各实景关卡出示此码获取真人NPC评分授勋。
+                    提示：需先通过家庭团手机号核验，系统才会开放护照激活。激活后将生成专属实时护照码，可在2天1夜的各实景关卡出示给真人 NPC 授勋。
                   </p>
                 </div>
               )}
@@ -470,7 +625,7 @@ export default function ParallaxScrollH5({
                 <div 
                   ref={scrollContainerRef}
                   onScroll={handleScroll}
-                  className="absolute inset-0 overflow-y-auto px-4 space-y-6 pb-12 z-10 scroll-smooth"
+                  className="mobile-safe-scroll absolute inset-0 overflow-y-auto px-4 space-y-6 z-10 scroll-smooth"
                 >
                   
                   {/* Decorative Family Linage Title top-bento */}
@@ -846,22 +1001,7 @@ export default function ParallaxScrollH5({
                       <h3 className="font-serif text-lg text-[#dfb15b] font-bold tracking-widest">
                         「小小封藏传人」印信
                       </h3>
-                      <p className="text-[9px] text-stone-400 font-serif">请向现场真人 NPC 点亮官出示此码核验</p>
-                    </div>
-
-                    {/* Simulating QR Code container */}
-                    <div className="flex justify-center py-2">
-                      <div className="p-3 bg-white rounded-xl shadow-xl relative inline-block">
-                        <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=hermesPassport_${passport.familyName}${passport.childName}_${selectedAvatar}`}
-                          alt="Passport QR Code"
-                          className="w-36 h-36 border-4 border-stone-100"
-                          referrerPolicy="no-referrer"
-                        />
-                        <span className="absolute inset-[43%] bg-stone-950 flex items-center justify-center rounded-lg border-2 border-white shadow text-[#dfb15b] p-1 text-[8px] font-serif font-bold">
-                          {passport.familyName}氏
-                        </span>
-                      </div>
+                      <p className="text-[9px] text-stone-400 font-serif">客户、NPC 与摄影师共用同一传人档案，但各自使用独立专属链接。</p>
                     </div>
 
                     <div className="space-y-2">
@@ -876,6 +1016,10 @@ export default function ParallaxScrollH5({
 
                     <div className="pt-2 border-t border-stone-900 grid grid-cols-2 gap-2 text-left">
                       <div className="p-2 bg-stone-900/60 rounded">
+                        <span className="block text-[8px] text-stone-500">传人护照号</span>
+                        <span className="text-[10px] text-[#dfb15b] font-mono break-all">{passport.passportId || "待激活"}</span>
+                      </div>
+                      <div className="p-2 bg-stone-900/60 rounded">
                         <span className="block text-[8px] text-stone-500">定制披风</span>
                         <span className="text-[10px] text-[#dfb15b] font-serif">{passport.avatarStyle}</span>
                       </div>
@@ -884,6 +1028,78 @@ export default function ParallaxScrollH5({
                         <span className="text-[10px] text-stone-200 font-serif">
                           已点亮 {passport.npcLitLevels.length} / 5
                         </span>
+                      </div>
+                      <div className="p-2 bg-stone-900/60 rounded">
+                        <span className="block text-[8px] text-stone-500">当前验核关卡</span>
+                        <span className="text-[10px] text-stone-200 font-serif">
+                          {nextUnlockLevel ? `${nextUnlockLevel.id} ${nextUnlockLevel.title}` : "已完成全部封藏环节"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 text-left">
+                      <div className="rounded-xl border border-[#dfb15b]/15 bg-[#120f0c] p-3">
+                        <p className="text-[9px] uppercase tracking-[0.22em] text-[#dfb15b]/80">现场验核印信码</p>
+                        <div className="mt-3 flex gap-3">
+                          <div className="shrink-0 rounded-xl bg-white p-2">
+                            <PassportQrCode value={passportScanPayload || customerResumeUrl} size={96} alt="Passport Scan Payload QR Code" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] leading-5 text-stone-300 font-serif">
+                              线下任务完成后，请在工作人员自己的 `npc` 或 `photographer` 端先通过门禁，再用站内扫码功能识别此印信码以锁定当前传人。此码已升级为短时有效且一次性使用的授权票据，不再直接公开后台链接。
+                            </p>
+                            <p className="mt-2 text-[9px] leading-4 text-stone-500 break-all font-mono">
+                              {passportScanPayload || customerResumeUrl}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="rounded-xl border border-white/10 bg-stone-900/60 p-3 text-left">
+                          <p className="text-[9px] uppercase tracking-[0.22em] text-cyan-300/80">客户自用恢复网址</p>
+                          <div className="mt-3 flex justify-center">
+                            <div className="rounded-xl bg-white p-2">
+                              <PassportQrCode value={customerResumeUrl} size={92} alt="Customer Resume QR Code" />
+                            </div>
+                          </div>
+                          <p className="mt-3 text-[10px] leading-5 text-stone-300 font-serif">
+                            这个二维码只用于家长在自己的手机上恢复客户前端长卷，不再向客户公开任何后台直达地址。
+                          </p>
+                          <p className="mt-3 text-[9px] leading-4 text-stone-500 break-all font-mono">
+                            {customerResumeUrl}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-red-500/15 bg-stone-900/60 p-3 text-left">
+                          <p className="text-[9px] uppercase tracking-[0.22em] text-red-300/80">NPC 专属后台码</p>
+                          <div className="mt-3 flex justify-center">
+                            <div className="rounded-xl bg-white p-2">
+                              <PassportQrCode value={npcResumeUrl} size={92} alt="NPC Resume QR Code" />
+                            </div>
+                          </div>
+                          <p className="mt-3 text-[10px] leading-5 text-stone-300 font-serif">
+                            真人 NPC 用手机扫这个码，会先进入 `npc` 门禁页；如果这台手机还没登录过，需先输入 PIN，通过后会自动进入当前孩子的专属评分后台。
+                          </p>
+                          <p className="mt-3 text-[9px] leading-4 text-stone-500 break-all font-mono">
+                            {npcResumeUrl}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-cyan-500/15 bg-stone-900/60 p-3 text-left">
+                          <p className="text-[9px] uppercase tracking-[0.22em] text-cyan-300/80">摄影师专属后台码</p>
+                          <div className="mt-3 flex justify-center">
+                            <div className="rounded-xl bg-white p-2">
+                              <PassportQrCode value={photographerResumeUrl} size={92} alt="Photographer Resume QR Code" />
+                            </div>
+                          </div>
+                          <p className="mt-3 text-[10px] leading-5 text-stone-300 font-serif">
+                            摄影师扫这个码，会先进入 `photographer` 门禁页；如果这台手机还没登录过，需先输入 PIN，通过后会自动进入当前孩子的专属上传后台。
+                          </p>
+                          <p className="mt-3 text-[9px] leading-4 text-stone-500 break-all font-mono">
+                            {photographerResumeUrl}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
@@ -901,7 +1117,7 @@ export default function ParallaxScrollH5({
 
       {/* FOOTER NAVIGATION MENU TABS */}
       {passport.activated && (
-        <div className="absolute bottom-0 inset-x-0 z-30 bg-black/40 backdrop-blur-xl border-t border-white/5 px-4 py-2 flex justify-around items-center h-16">
+        <div className="mobile-safe-nav absolute bottom-0 inset-x-0 z-30 bg-black/40 backdrop-blur-xl border-t border-white/5 px-4 pt-2 flex justify-around items-center">
           <button
             onClick={() => { setActiveTab("map"); synth.playSwipe(); }}
             className={`flex flex-col items-center justify-center gap-1 flex-1 transition-all outline-none cursor-pointer ${

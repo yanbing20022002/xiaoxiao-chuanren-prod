@@ -7,6 +7,30 @@
   --font-brush: ui-serif, "Kaiti SC", KaiTi, STKaiti, serif;
 }
 
+:root {
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #020205;
+}
+
+.mobile-safe-content {
+  padding-bottom: calc(4rem + var(--safe-area-bottom) + 0.75rem);
+}
+
+.mobile-safe-scroll {
+  padding-bottom: calc(3rem + var(--safe-area-bottom));
+}
+
+.mobile-safe-nav {
+  padding-bottom: calc(0.5rem + var(--safe-area-bottom));
+  min-height: calc(4rem + var(--safe-area-bottom));
+}
+
 /* Custom ink scroll appearance improvements */
 .scroll-smooth::-webkit-scrollbar {
   width: 3px;

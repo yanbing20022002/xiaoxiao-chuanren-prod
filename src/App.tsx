@@ -4,10 +4,41 @@
  */
 
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { GameLevel, LivePhoto, LevelStatus, UserPassport } from "./types";
+import {
+  FamilyAccessRecord,
+  FrontDeskCheckInRecord,
+  GameLevel,
+  LivePhoto,
+  LevelStatus,
+  UserPassport,
+  VerifiedFamilySession
+} from "./types";
+import {
+  buildVerifiedFamilySessionFromPassport,
+  clearVerifiedFamilySession,
+  readVerifiedFamilySession,
+  writeVerifiedFamilySession
+} from "./utils/customerAccess";
+import {
+  awardPassportLevel,
+  checkInFamilyByPhone,
+  fetchCustomerPassportState,
+  fetchStaffDashboardSnapshot,
+  fetchStaffPassportState,
+  getBackendErrorMessage,
+  importRoster,
+  issuePassportScanTicket,
+  resolvePassportScanTicket,
+  saveCustomerPassport,
+  uploadPassportPhoto
+} from "./utils/backend";
+import { PassportRecord, LAST_CUSTOMER_PASSPORT_KEY, LAST_NPC_PASSPORT_KEY, LAST_PHOTOGRAPHER_PASSPORT_KEY, createCustomerResumeUrl, createNpcScanPayload, generatePassportId, getPassportRecord, listRecentPassportRecords, parsePassportIdFromScan, readStoredPassportId, upsertPassportRecord, writeStoredPassportId } from "./utils/passport";
+import { readStaffSession, STAFF_SESSION_CHANGE_EVENT } from "./utils/staffAccess";
+import { createNpcResumeUrl, createPhotographerResumeUrl } from "./utils/passport";
 
 const CustomerPage = lazy(() => import("./pages/Customer"));
 const NpcPage = lazy(() => import("./pages/Npc"));
+const PhotographerPage = lazy(() => import("./pages/Photographer"));
 
 const INITIAL_LEVELS: GameLevel[] = [
   {
@@ -73,6 +104,11 @@ const INITIAL_LEVELS: GameLevel[] = [
 ];
 
 const INITIAL_PASSPORT: UserPassport = {
+  passportId: "",
+  rosterFamilyId: "",
+  familyLabel: "",
+  contactName: "",
+  contactPhone: "",
   childName: "",
   familyName: "",
   customMotto: "",
@@ -91,92 +127,309 @@ const SCENE_ASSETS = {
 
 const INTRO_BGM_URL = "/assets/audio/intro-bgm.mp3";
 
-type RoleMode = "customer" | "npc" | "default";
-type TriggerStamp = { levelId: string; stars: number; timestamp: number } | null;
-
-const SHARED_STATE_STORAGE_KEY = "xiaoxiao-chuanren-shared-state-v1";
-const TRIGGER_STORAGE_KEY = "xiaoxiao-chuanren-trigger-stamp-v1";
+type RoleMode = "customer" | "npc" | "photographer" | "default";
+type StaffRole = "npc" | "photographer";
+type TriggerStamp = { passportId: string; levelId: string; stars: number; timestamp: number } | null;
 
 function getRoleFromSearch(search: string): RoleMode {
   const role = new URLSearchParams(search).get("role");
-  if (role === "customer" || role === "npc") return role;
+  if (role === "customer" || role === "npc" || role === "photographer") return role;
   return "default";
 }
 
-function readSharedState() {
-  try {
-    const raw = window.localStorage.getItem(SHARED_STATE_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as { passport?: UserPassport; photos?: LivePhoto[] };
-  } catch {
-    return null;
-  }
+function getPassportIdFromSearch(search: string) {
+  return new URLSearchParams(search).get("passport") ?? "";
 }
 
-function writeTriggerStamp(trigger: TriggerStamp) {
-  if (!trigger) return;
-  window.localStorage.setItem(TRIGGER_STORAGE_KEY, JSON.stringify(trigger));
+function replaceRouteState(role: RoleMode, passportId = "") {
+  const url = new URL(window.location.href);
+  url.searchParams.set("role", role);
+  if (passportId) {
+    url.searchParams.set("passport", passportId);
+  } else {
+    url.searchParams.delete("passport");
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+}
+
+function buildPassportFromVerifiedFamily(verifiedFamily: VerifiedFamilySession | null): UserPassport {
+  if (!verifiedFamily) return INITIAL_PASSPORT;
+
+  return {
+    ...INITIAL_PASSPORT,
+    rosterFamilyId: verifiedFamily.rosterFamilyId,
+    familyLabel: verifiedFamily.familyLabel,
+    contactName: verifiedFamily.contactName,
+    contactPhone: verifiedFamily.contactPhone
+  };
+}
+
+function getStaffStorageKey(role: StaffRole) {
+  return role === "npc" ? LAST_NPC_PASSPORT_KEY : LAST_PHOTOGRAPHER_PASSPORT_KEY;
+}
+
+function hasPassportChanged(a: UserPassport, b: UserPassport) {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+function havePhotosChanged(a: LivePhoto[], b: LivePhoto[]) {
+  return JSON.stringify(a) !== JSON.stringify(b);
 }
 
 export default function App() {
   const [role, setRole] = useState<RoleMode>(() => getRoleFromSearch(window.location.search));
   const [hasCompletedIntro, setHasCompletedIntro] = useState(false);
-  const [passport, setPassport] = useState<UserPassport>(() => readSharedState()?.passport ?? INITIAL_PASSPORT);
-  const [photos, setPhotos] = useState<LivePhoto[]>(() => readSharedState()?.photos ?? []);
+  const [verifiedFamily, setVerifiedFamily] = useState<VerifiedFamilySession | null>(() => {
+    const currentRole = getRoleFromSearch(window.location.search);
+    if (currentRole !== "customer") return null;
+    return readVerifiedFamilySession();
+  });
+  const [activePassportId, setActivePassportId] = useState<string>(() => {
+    const searchPassportId = getPassportIdFromSearch(window.location.search);
+    if (searchPassportId) return searchPassportId;
+
+    const currentRole = getRoleFromSearch(window.location.search);
+    if (currentRole === "customer") return readStoredPassportId(LAST_CUSTOMER_PASSPORT_KEY);
+    if (currentRole === "npc") return readStoredPassportId(LAST_NPC_PASSPORT_KEY);
+    if (currentRole === "photographer") return readStoredPassportId(LAST_PHOTOGRAPHER_PASSPORT_KEY);
+    return "";
+  });
+  const [passport, setPassport] = useState<UserPassport>(() => {
+    if (activePassportId) {
+      return getPassportRecord(activePassportId)?.passport ?? INITIAL_PASSPORT;
+    }
+    return buildPassportFromVerifiedFamily(readVerifiedFamilySession());
+  });
+  const [photos, setPhotos] = useState<LivePhoto[]>(() => (activePassportId ? getPassportRecord(activePassportId)?.photos ?? [] : []));
   const [lastTriggeredStamp, setLastTriggeredStamp] = useState<TriggerStamp>(null);
+  const [passportScanPayload, setPassportScanPayload] = useState("");
+  const [familyRoster, setFamilyRoster] = useState<FamilyAccessRecord[]>([]);
+  const [frontDeskCheckInLogs, setFrontDeskCheckInLogs] = useState<FrontDeskCheckInRecord[]>([]);
+  const [recentPassportRecords, setRecentPassportRecords] = useState<PassportRecord[]>(() => listRecentPassportRecords());
+
+  const cachePassportRecord = (nextPassport: UserPassport, nextPhotos: LivePhoto[]) => {
+    if (!nextPassport.passportId) return;
+    upsertPassportRecord(nextPassport, nextPhotos);
+    setRecentPassportRecords(listRecentPassportRecords());
+  };
+
+  const applyPassportState = (nextPassport: UserPassport, nextPhotos: LivePhoto[], shouldTrigger = false) => {
+    if (shouldTrigger) {
+      const newLevelId = nextPassport.npcLitLevels.find((levelId) => !passport.npcLitLevels.includes(levelId));
+      if (newLevelId) {
+        setLastTriggeredStamp({
+          passportId: nextPassport.passportId,
+          levelId: newLevelId,
+          stars: nextPassport.scoreHistory[newLevelId] ?? 0,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    setPassport(nextPassport);
+    setPhotos(nextPhotos);
+    cachePassportRecord(nextPassport, nextPhotos);
+  };
+
+  const hydratePassportByRole = async (targetRole: RoleMode, passportId: string) => {
+    if (!passportId) {
+      const storedVerifiedFamily = targetRole === "customer" ? readVerifiedFamilySession() : null;
+      setVerifiedFamily(storedVerifiedFamily);
+      setPassport(buildPassportFromVerifiedFamily(storedVerifiedFamily));
+      setPhotos([]);
+      return;
+    }
+
+    try {
+      if (targetRole === "customer") {
+        const result = await fetchCustomerPassportState(passportId);
+        if (result.ok && result.passport) {
+          applyPassportState(result.passport, result.photos ?? []);
+          setVerifiedFamily(buildVerifiedFamilySessionFromPassport(result.passport));
+        }
+        return;
+      }
+
+      if (targetRole === "npc" || targetRole === "photographer") {
+        const staffSession = readStaffSession(targetRole);
+        if (!staffSession) {
+          const cachedRecord = getPassportRecord(passportId);
+          if (cachedRecord) {
+            setPassport(cachedRecord.passport);
+            setPhotos(cachedRecord.photos);
+          }
+          return;
+        }
+
+        const result = await fetchStaffPassportState(staffSession.sessionToken, targetRole, passportId);
+        if (result.ok && result.passport) {
+          applyPassportState(result.passport, result.photos ?? []);
+        }
+      }
+    } catch {
+      const cachedRecord = getPassportRecord(passportId);
+      if (cachedRecord) {
+        setPassport(cachedRecord.passport);
+        setPhotos(cachedRecord.photos);
+      }
+    }
+  };
+
+  const refreshStaffSnapshot = async (staffRole: StaffRole) => {
+    const session = readStaffSession(staffRole);
+    if (!session) return;
+
+    try {
+      const snapshot = await fetchStaffDashboardSnapshot(session.sessionToken, staffRole);
+      if (!snapshot.ok) return;
+
+      setFamilyRoster(snapshot.familyRoster ?? []);
+      setFrontDeskCheckInLogs(snapshot.frontDeskCheckInLogs ?? []);
+      setRecentPassportRecords(snapshot.recentPassportRecords ?? []);
+      (snapshot.recentPassportRecords ?? []).forEach((record) => cachePassportRecord(record.passport, record.photos));
+    } catch {
+      // Ignore transient snapshot failures.
+    }
+  };
+
+  const persistCustomerPassport = async (nextPassport: UserPassport) => {
+    if (!nextPassport.passportId || !nextPassport.rosterFamilyId || !nextPassport.contactPhone) return;
+
+    try {
+      const result = await saveCustomerPassport(nextPassport);
+      if (result.ok && result.passport) {
+        setPassport(result.passport);
+        cachePassportRecord(result.passport, photos);
+      }
+    } catch {
+      // Keep local state as fallback when remote persistence is temporarily unavailable.
+    }
+  };
 
   useEffect(() => {
-    const handlePopState = () => setRole(getRoleFromSearch(window.location.search));
+    const handlePopState = () => {
+      const nextRole = getRoleFromSearch(window.location.search);
+      const searchPassportId = getPassportIdFromSearch(window.location.search);
+      setRole(nextRole);
+      setActivePassportId(searchPassportId);
+      void hydratePassportByRole(nextRole, searchPassportId);
+    };
+
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      SHARED_STATE_STORAGE_KEY,
-      JSON.stringify({
-        passport,
-        photos
-      })
-    );
-  }, [passport, photos]);
+    void hydratePassportByRole(role, activePassportId);
+    if (role === "npc" || role === "photographer") {
+      void refreshStaffSnapshot(role);
+    }
+  }, [role, activePassportId]);
 
   useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === SHARED_STATE_STORAGE_KEY && event.newValue) {
-        try {
-          const nextState = JSON.parse(event.newValue) as { passport?: UserPassport; photos?: LivePhoto[] };
-          if (nextState.passport) {
-            setPassport(nextState.passport);
-          }
-          if (nextState.photos) {
-            setPhotos(nextState.photos);
-          }
-        } catch {
-          // Ignore malformed storage payloads.
-        }
-      }
+    const handleStaffSessionChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ role?: StaffRole }>).detail;
+      if (!detail?.role || detail.role !== role) return;
 
-      if (event.key === TRIGGER_STORAGE_KEY && event.newValue) {
-        try {
-          const nextTrigger = JSON.parse(event.newValue) as TriggerStamp;
-          if (nextTrigger) {
-            setLastTriggeredStamp(nextTrigger);
-          }
-        } catch {
-          // Ignore malformed trigger payloads.
+      void refreshStaffSnapshot(detail.role);
+      if (activePassportId) {
+        void hydratePassportByRole(detail.role, activePassportId);
+      }
+    };
+
+    window.addEventListener(STAFF_SESSION_CHANGE_EVENT, handleStaffSessionChanged as EventListener);
+    return () => window.removeEventListener(STAFF_SESSION_CHANGE_EVENT, handleStaffSessionChanged as EventListener);
+  }, [role, activePassportId]);
+
+  useEffect(() => {
+    if (role !== "customer") return;
+
+    const nextVerifiedFamily = buildVerifiedFamilySessionFromPassport(passport) ?? verifiedFamily;
+    if (nextVerifiedFamily) {
+      writeVerifiedFamilySession(nextVerifiedFamily);
+      return;
+    }
+
+    clearVerifiedFamilySession();
+  }, [passport, role, verifiedFamily]);
+
+  useEffect(() => {
+    if (role !== "customer" || !passport.passportId || !passport.contactPhone || !passport.activated) {
+      setPassportScanPayload("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshTicket = async () => {
+      try {
+        const result = await issuePassportScanTicket(passport.passportId, passport.contactPhone);
+        if (!cancelled && result.ok && result.ticket_token) {
+          setPassportScanPayload(createNpcScanPayload(result.ticket_token));
+        }
+      } catch {
+        if (!cancelled) {
+          setPassportScanPayload("");
         }
       }
     };
 
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+    void refreshTicket();
+    const intervalId = window.setInterval(() => {
+      void refreshTicket();
+    }, 45000);
 
-  const sceneAssets = useMemo(
-    () => [SCENE_ASSETS.ink, SCENE_ASSETS.run, SCENE_ASSETS.union, SCENE_ASSETS.finale],
-    []
-  );
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [role, passport.passportId, passport.contactPhone, passport.activated]);
+
+  useEffect(() => {
+    if (role === "customer" && passport.passportId) {
+      writeStoredPassportId(LAST_CUSTOMER_PASSPORT_KEY, passport.passportId);
+      if (activePassportId !== passport.passportId) {
+        setActivePassportId(passport.passportId);
+      }
+      replaceRouteState("customer", passport.passportId);
+      return;
+    }
+
+    if (role === "npc" && activePassportId) {
+      writeStoredPassportId(LAST_NPC_PASSPORT_KEY, activePassportId);
+      replaceRouteState("npc", activePassportId);
+      return;
+    }
+
+    if (role === "photographer" && activePassportId) {
+      writeStoredPassportId(LAST_PHOTOGRAPHER_PASSPORT_KEY, activePassportId);
+      replaceRouteState("photographer", activePassportId);
+    }
+  }, [activePassportId, passport.passportId, role]);
+
+  useEffect(() => {
+    if (role !== "customer" || !passport.passportId) return;
+
+    const intervalId = window.setInterval(() => {
+      void fetchCustomerPassportState(passport.passportId)
+        .then((result) => {
+          if (!result.ok || !result.passport) return;
+          if (!hasPassportChanged(passport, result.passport) || !havePhotosChanged(photos, result.photos ?? [])) {
+            if (!hasPassportChanged(passport, result.passport) && !havePhotosChanged(photos, result.photos ?? [])) {
+              return;
+            }
+          }
+          applyPassportState(result.passport, result.photos ?? [], true);
+        })
+        .catch(() => {
+          // Ignore polling hiccups.
+        });
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [role, passport, photos]);
+
+  const sceneAssets = useMemo(() => [SCENE_ASSETS.ink, SCENE_ASSETS.run, SCENE_ASSETS.union, SCENE_ASSETS.finale], []);
 
   const levels = useMemo<GameLevel[]>(
     () =>
@@ -204,38 +457,321 @@ export default function App() {
   );
 
   const handleUpdatePassport = (updatedFields: Partial<UserPassport>) => {
-    setPassport((prev) => ({
-      ...prev,
-      ...updatedFields,
-      scoreHistory: updatedFields.scoreHistory ?? prev.scoreHistory,
-      npcLitLevels: updatedFields.npcLitLevels ?? prev.npcLitLevels
-    }));
-  };
-
-  const handleNpcScoreLevel = (levelId: string, stars: number) => {
-    window.setTimeout(() => {
-      const trigger = { levelId, stars, timestamp: Date.now() };
-      setPassport((prev) => ({
+    setPassport((prev) => {
+      const shouldGeneratePassportId = Boolean(updatedFields.activated || updatedFields.passportId || prev.passportId);
+      const nextPassport = {
         ...prev,
-        scoreHistory: { ...prev.scoreHistory, [levelId]: stars },
-        npcLitLevels: prev.npcLitLevels.includes(levelId)
-          ? prev.npcLitLevels
-          : [...prev.npcLitLevels, levelId].sort((a, b) => Number(a) - Number(b))
-      }));
-      setLastTriggeredStamp(trigger);
-      writeTriggerStamp(trigger);
-    }, 150);
+        ...updatedFields,
+        passportId: updatedFields.passportId || prev.passportId || (shouldGeneratePassportId ? generatePassportId() : ""),
+        scoreHistory: updatedFields.scoreHistory ?? prev.scoreHistory,
+        npcLitLevels: updatedFields.npcLitLevels ?? prev.npcLitLevels
+      };
+      cachePassportRecord(nextPassport, photos);
+      void persistCustomerPassport(nextPassport);
+      return nextPassport;
+    });
   };
 
-  const handlePhotoUploaded = (photo: LivePhoto) => {
-    setPhotos((prev) => [photo, ...prev]);
+  const handleNpcScoreLevel = async (levelId: string, stars: number) => {
+    if (!passport.passportId || role !== "npc") {
+      return {
+        ok: false,
+        message: "请先绑定孩子护照，再执行真人授勋。"
+      };
+    }
+
+    const session = readStaffSession("npc");
+    if (!session) {
+      return {
+        ok: false,
+        message: "工作人员会话已失效，请重新登录 NPC 后台。"
+      };
+    }
+
+    try {
+      const result = await awardPassportLevel(session.sessionToken, passport.passportId, levelId, stars);
+      if (!result.ok || !result.passport) {
+        return {
+          ok: false,
+          message: result.message || "远端授勋失败，请稍后重试。"
+        };
+      }
+
+      const trigger = {
+        passportId: result.passport.passportId,
+        levelId,
+        stars,
+        timestamp: Date.now()
+      };
+      setLastTriggeredStamp(trigger);
+      applyPassportState(result.passport, photos);
+      await refreshStaffSnapshot("npc");
+
+      return {
+        ok: true,
+        message: `已完成 ${levelId} 关现场授勋。孩子端将收到最新勋章状态并刷新下一关。`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getBackendErrorMessage(error, "远端授勋失败，请检查 Supabase 连接。")
+      };
+    }
+  };
+
+  const handlePhotoUploaded = async (photo: LivePhoto) => {
+    if (!passport.passportId || role !== "photographer") {
+      return {
+        ok: false,
+        message: "请先绑定客户，再上传照片。"
+      };
+    }
+
+    const session = readStaffSession("photographer");
+    if (!session) {
+      return {
+        ok: false,
+        message: "摄影师会话已失效，请重新登录。"
+      };
+    }
+
+    try {
+      const result = await uploadPassportPhoto(session.sessionToken, passport.passportId, photo);
+      if (!result.ok) {
+        return {
+          ok: false,
+          message: result.message || "远端照片上传失败。"
+        };
+      }
+
+      const nextPhotos = [photo, ...photos];
+      setPhotos(nextPhotos);
+      cachePassportRecord(passport, nextPhotos);
+      await refreshStaffSnapshot("photographer");
+
+      return {
+        ok: true,
+        message: "照片已写入云端档案，并同步到客户长卷。"
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getBackendErrorMessage(error, "远端照片上传失败，请稍后重试。")
+      };
+    }
   };
 
   const handleClearScore = () => {
-    setPassport(INITIAL_PASSPORT);
+    setPassport((prev) => ({
+      ...INITIAL_PASSPORT,
+      passportId: prev.passportId,
+      rosterFamilyId: prev.rosterFamilyId,
+      familyLabel: prev.familyLabel,
+      contactName: prev.contactName,
+      contactPhone: prev.contactPhone,
+      childName: prev.childName,
+      familyName: prev.familyName,
+      customMotto: prev.customMotto,
+      avatarStyle: prev.avatarStyle,
+      activated: prev.activated
+    }));
     setPhotos([]);
     setLastTriggeredStamp(null);
   };
+
+  const handleVerifyCustomerAccess = async (rawPhone: string) => {
+    try {
+      const result = await checkInFamilyByPhone(rawPhone);
+      if (!result.ok || !result.family) {
+        return {
+          ok: false,
+          message: result.message || "该手机号不在本场家庭团报名名单中。"
+        };
+      }
+
+      const nextVerifiedFamily: VerifiedFamilySession = {
+        rosterFamilyId: result.family.id,
+        familyLabel: result.family.familyLabel,
+        contactName: result.family.contactName,
+        contactPhone: result.family.contactPhone,
+        verifiedAt: new Date().toISOString()
+      };
+
+      setVerifiedFamily(nextVerifiedFamily);
+      writeVerifiedFamilySession(nextVerifiedFamily);
+      await refreshStaffSnapshot("npc");
+
+      if (result.passport?.passportId) {
+        const passportState = await fetchCustomerPassportState(result.passport.passportId);
+        if (passportState.ok && passportState.passport) {
+          setActivePassportId(passportState.passport.passportId);
+          applyPassportState(passportState.passport, passportState.photos ?? []);
+          replaceRouteState("customer", passportState.passport.passportId);
+        }
+
+        return {
+          ok: true,
+          message: `${result.family.familyLabel} 已报到，系统识别到该手机号已有家庭账号，现已直接续接原护照。`
+        };
+      }
+
+      setActivePassportId("");
+      setPassport(buildPassportFromVerifiedFamily(nextVerifiedFamily));
+      setPhotos([]);
+      replaceRouteState("customer");
+
+      return {
+        ok: true,
+        message: `${result.family.familyLabel} 已完成报到核验，请继续激活孩子的传人护照。`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getBackendErrorMessage(error, "手机号核验失败，请检查 Supabase 连接。")
+      };
+    }
+  };
+
+  const handleClearCustomerAccess = () => {
+    setVerifiedFamily(null);
+    clearVerifiedFamilySession();
+    writeStoredPassportId(LAST_CUSTOMER_PASSPORT_KEY, "");
+    setActivePassportId("");
+    setPassport(INITIAL_PASSPORT);
+    setPhotos([]);
+    setLastTriggeredStamp(null);
+    setHasCompletedIntro(false);
+    replaceRouteState("customer");
+  };
+
+  const handleRestartCustomerActivation = () => {
+    setLastTriggeredStamp(null);
+    handleUpdatePassport({
+      activated: false
+    });
+  };
+
+  const handleImportFamilyRoster = async (records: FamilyAccessRecord[]) => {
+    const session = readStaffSession("npc");
+    if (!session) {
+      return {
+        ok: false,
+        message: "工作人员会话已失效，请重新登录 NPC 后台。"
+      };
+    }
+
+    try {
+      const result = await importRoster(session.sessionToken, records);
+      if (!result.ok) {
+        return {
+          ok: false,
+          message: result.message || "导入失败，请稍后重试。"
+        };
+      }
+
+      await refreshStaffSnapshot("npc");
+      return {
+        ok: true,
+        message: `已导入 ${records.length} 个家庭名单，新的报到手机号白名单已同步到 Supabase。`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getBackendErrorMessage(error, "名单导入失败，请检查 Supabase 连接。")
+      };
+    }
+  };
+
+  const handleScanPassport = async (rawValue: string) => {
+    const parsedScanValue = parsePassportIdFromScan(rawValue);
+    if (!parsedScanValue) {
+      return {
+        ok: false,
+        message: "未识别到有效传人印信，请重新扫码或粘贴完整护照码。"
+      };
+    }
+
+    if (role !== "npc" && role !== "photographer") {
+      return {
+        ok: false,
+        message: "当前终端不支持后台扫码。"
+      };
+    }
+
+    const session = readStaffSession(role);
+    if (!session) {
+      return {
+        ok: false,
+        message: "工作人员会话已失效，请重新登录。"
+      };
+    }
+
+    try {
+      let resolvedPassportId = "";
+
+      if (parsedScanValue.startsWith("ticket:")) {
+        const ticketToken = parsedScanValue.slice("ticket:".length);
+        const ticketResult = await resolvePassportScanTicket(session.sessionToken, role, ticketToken);
+        if (!ticketResult.ok || !ticketResult.passport_id) {
+          return {
+            ok: false,
+            message: ticketResult.message || "授权码无效，请让客户刷新二维码后重试。"
+          };
+        }
+        resolvedPassportId = ticketResult.passport_id;
+      } else if (parsedScanValue.startsWith("passport:")) {
+        resolvedPassportId = parsedScanValue.slice("passport:".length);
+      }
+
+      if (!resolvedPassportId) {
+        return {
+          ok: false,
+          message: "未解析出有效传人档案，请重新扫码。"
+        };
+      }
+
+      const result = await fetchStaffPassportState(session.sessionToken, role, resolvedPassportId);
+      if (!result.ok || !result.passport) {
+        return {
+          ok: false,
+          message: result.message || "未找到该传人档案，请确认孩子已经先在客户端完成护照激活。"
+        };
+      }
+
+      setActivePassportId(resolvedPassportId);
+      applyPassportState(result.passport, result.photos ?? []);
+      writeStoredPassportId(getStaffStorageKey(role), resolvedPassportId);
+      replaceRouteState(role, resolvedPassportId);
+
+      return {
+        ok: true,
+        message: `已锁定 ${result.passport.familyName || "未命名"}氏${result.passport.childName || "传人"} 的现场核验流程。`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getBackendErrorMessage(error, "扫码绑定失败，请稍后重试。")
+      };
+    }
+  };
+
+  const handleClearNpcSelection = () => {
+    setActivePassportId("");
+    setPassport(INITIAL_PASSPORT);
+    setPhotos([]);
+    if (role === "npc" || role === "photographer") {
+      replaceRouteState(role);
+      writeStoredPassportId(getStaffStorageKey(role), "");
+    }
+  };
+
+  const routeBaseUrl = useMemo(() => `${window.location.origin}${window.location.pathname}`, []);
+  const customerResumeUrl = useMemo(() => (passport.passportId ? createCustomerResumeUrl(routeBaseUrl, passport.passportId) : ""), [passport.passportId, routeBaseUrl]);
+  const npcResumeUrl = useMemo(() => (passport.passportId ? createNpcResumeUrl(routeBaseUrl, passport.passportId) : ""), [passport.passportId, routeBaseUrl]);
+  const photographerResumeUrl = useMemo(
+    () => (passport.passportId ? createPhotographerResumeUrl(routeBaseUrl, passport.passportId) : ""),
+    [passport.passportId, routeBaseUrl]
+  );
 
   const sharedProps = {
     levels,
@@ -245,11 +781,26 @@ export default function App() {
     sceneAssets,
     hasCompletedIntro,
     bgmSrc: INTRO_BGM_URL,
+    activePassportId,
+    verifiedFamily,
+    familyRoster,
+    frontDeskCheckInLogs,
+    passportScanPayload,
+    customerResumeUrl,
+    npcResumeUrl,
+    photographerResumeUrl,
+    recentPassportRecords,
     onUpdatePassport: handleUpdatePassport,
     onClearScore: handleClearScore,
     onPhotoUploaded: handlePhotoUploaded,
     onUpdateScore: handleNpcScoreLevel,
-    onIntroComplete: () => setHasCompletedIntro(true)
+    onVerifyCustomerAccess: handleVerifyCustomerAccess,
+    onClearCustomerAccess: handleClearCustomerAccess,
+    onRestartCustomerActivation: handleRestartCustomerActivation,
+    onImportFamilyRoster: handleImportFamilyRoster,
+    onIntroComplete: () => setHasCompletedIntro(true),
+    onScanPassport: handleScanPassport,
+    onClearNpcSelection: handleClearNpcSelection
   };
 
   const loadingShell = (
@@ -274,13 +825,21 @@ export default function App() {
     );
   }
 
+  if (role === "photographer") {
+    return (
+      <Suspense fallback={loadingShell}>
+        <PhotographerPage {...sharedProps} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#050609] text-white overflow-hidden relative">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(240,196,116,0.18),transparent_35%),linear-gradient(160deg,#050609_0%,#0c1018_45%,#040404_100%)]" />
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
       <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-5xl rounded-[32px] border border-white/10 bg-white/6 backdrop-blur-2xl shadow-[0_24px_120px_rgba(0,0,0,0.45)] overflow-hidden">
-          <div className="grid gap-px bg-white/8 md:grid-cols-2">
+          <div className="grid gap-px bg-white/8 md:grid-cols-3">
             <a href="?role=customer" className="group relative min-h-[520px] overflow-hidden bg-[#090b10] p-8">
               <img src={SCENE_ASSETS.finale} alt="customer terminal" className="absolute inset-0 h-full w-full object-cover opacity-45 transition-transform duration-700 group-hover:scale-105" />
               <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/45 to-black/80" />
@@ -310,6 +869,22 @@ export default function App() {
                 </div>
                 <div className="inline-flex w-fit items-center rounded-full border border-red-300/30 bg-black/35 px-5 py-3 text-xs uppercase tracking-[0.28em] text-red-100">
                   进入 npc 端
+                </div>
+              </div>
+            </a>
+            <a href="?role=photographer" className="group relative min-h-[520px] overflow-hidden bg-[#090b10] p-8">
+              <img src={SCENE_ASSETS.run} alt="photographer terminal" className="absolute inset-0 h-full w-full object-cover opacity-35 transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/45 to-black/85" />
+              <div className="relative flex h-full flex-col justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.35em] text-cyan-300/80">Photographer Upload</p>
+                  <h2 className="mt-4 text-3xl font-serif tracking-[0.18em] text-white">摄影师随拍上传端</h2>
+                  <p className="mt-4 max-w-sm text-sm leading-7 text-stone-300">
+                    摄影师可扫码锁定客户、上传现场照片并实时同步到客户相片长卷，避免和 NPC 评分后台混用。
+                  </p>
+                </div>
+                <div className="inline-flex w-fit items-center rounded-full border border-cyan-300/30 bg-black/35 px-5 py-3 text-xs uppercase tracking-[0.28em] text-cyan-100">
+                  进入 photographer 端
                 </div>
               </div>
             </a>

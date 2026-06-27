@@ -81,12 +81,18 @@ const INITIAL_LEVELS: GameLevel[] = [
 ];
 
 const INITIAL_PASSPORT: UserPassport = {
+  passportId: "",
+  rosterFamilyId: "",
+  familyLabel: "",
+  contactName: "",
+  contactPhone: "",
   childName: "",
   familyName: "",
   customMotto: "",
   avatarStyle: "汉服青衣",
   activated: false,
-  scoreHistory: {}
+  scoreHistory: {},
+  npcLitLevels: []
 };
 
 export default function App() {

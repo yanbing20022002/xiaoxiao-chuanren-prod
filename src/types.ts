@@ -25,6 +25,11 @@ export interface GameLevel {
 }
 
 export interface UserPassport {
+  passportId: string;
+  rosterFamilyId: string;
+  familyLabel: string;
+  contactName: string;
+  contactPhone: string;
   childName: string;
   familyName: string;
   customMotto: string;
@@ -32,6 +37,35 @@ export interface UserPassport {
   activated: boolean;
   scoreHistory: { [levelId: string]: number };
   npcLitLevels: string[];
+}
+
+export interface FamilyAccessRecord {
+  id: string;
+  familyLabel: string;
+  contactName: string;
+  contactPhone: string;
+  note?: string;
+  importedAt?: string;
+}
+
+export interface VerifiedFamilySession {
+  rosterFamilyId: string;
+  familyLabel: string;
+  contactName: string;
+  contactPhone: string;
+  verifiedAt: string;
+}
+
+export interface FrontDeskCheckInRecord {
+  id: string;
+  rosterFamilyId: string;
+  familyLabel: string;
+  contactName: string;
+  contactPhone: string;
+  passportId: string;
+  status: "verified" | "resumed";
+  message: string;
+  checkedInAt: string;
 }
 
 export interface LivePhoto {
